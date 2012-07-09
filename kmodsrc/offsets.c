@@ -144,9 +144,10 @@ const struct table_section table_sections[]
 #endif /* CONFIG_PARAVIRT */
 	{
 		.sect = ".smp_locks",
-		.entry_size = sizeof(u8 *),
-		.entry_align = __alignof__(u8 *),
+		.entry_size = sizeof(u32),
+		.entry_align = 4,
 		.has_addr = 1,
+		.relative_addr = 1,
 		.addr_offset = 0,
 	},
 	{
