@@ -17,7 +17,13 @@
 
 #if defined(_ASM_X86_PROCESSOR_H) || \
     defined(__ASM_X86_PROCESSOR_H)	/* New unified x86 */
+#if defined(CONFIG_X86_64)
+#define KSPLICE_CHECK_IP 0
+#define KSPLICE_IP(x) (~0UL)
+#else
+#define KSPLICE_CHECK_IP 1
 #define KSPLICE_IP(x) ((x)->thread.ip)
+#endif
 #define KSPLICE_SP(x) ((x)->thread.sp)
 #elif defined(CONFIG_X86_64)	/* Old x86 64-bit */
 /* The IP is on the stack, so we don't need to check it separately.

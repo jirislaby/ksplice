@@ -3205,7 +3205,10 @@ static abort_t check_task(struct update *update,
 #endif
 		return OK;
 
-	status = check_address(update, conf, KSPLICE_IP(t));
+	if (KSPLICE_CHECK_IP)
+		status = check_address(update, conf, KSPLICE_IP(t));
+	else
+		status = OK;
 
 	ret = check_address(update, conf,
 			    (unsigned long)task_thread_info(t)->
