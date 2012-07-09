@@ -2385,14 +2385,14 @@ out:
 }
 #endif /* KSPLICE_STANDALONE && !CONFIG_KALLSYMS */
 
-struct range {
+struct addr_range {
 	unsigned long address;
 	unsigned long size;
 };
 
 static int reloc_bsearch_compare(const void *key, const void *elt)
 {
-	const struct range *range = key;
+	const struct addr_range *range = key;
 	const struct ksplice_reloc *r = elt;
 	if (range->address + range->size <= r->blank_addr)
 		return -1;
@@ -2407,7 +2407,7 @@ static const struct ksplice_reloc *find_reloc(const struct ksplice_reloc *start,
 					      unsigned long size)
 {
 	const struct ksplice_reloc *r;
-	struct range range = { address, size };
+	struct addr_range range = { address, size };
 	r = bsearch((void *)&range, start, end - start, sizeof(*r),
 		    reloc_bsearch_compare);
 	if (r == NULL)
