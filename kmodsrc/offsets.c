@@ -15,7 +15,7 @@
  *  02110-1301, USA.
  */
 
-#include <linux/compile.h>
+#include <generated/compile.h>
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/module.h>
@@ -23,7 +23,7 @@
 #include <linux/utsname.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18)
 /* 63104eec234bdecb55fd9c15467ae00d0a3f42ac was after 2.6.17 */
-#include <linux/utsrelease.h>
+#include <generated/utsrelease.h>
 #endif /* LINUX_VERSION_CODE */
 
 #ifdef CONFIG_PARAVIRT
