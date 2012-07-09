@@ -33,10 +33,6 @@
 #define paravirt_patch_site paravirt_patch
 #endif /* LINUX_VERSION_CODE */
 #endif /* CONFIG_PARAVIRT */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
-/* 8256e47cdc8923e9959eb1d7f95d80da538add80 was after 2.6.23 */
-#include <linux/marker.h>
-#endif /* LINUX_VERSION_CODE */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
 /* 97e1c18e8d17bd87e1e383b2e9d9fc740332c8e2 was after 2.6.27 */
 #include <linux/tracepoint.h>
@@ -111,16 +107,6 @@ const struct table_section table_sections[]
 		.other_sect = ".fixup",
 		.other_offset = offsetof(struct exception_table_entry, fixup),
 	},
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
-/* 8256e47cdc8923e9959eb1d7f95d80da538add80 was after 2.6.23 */
-	{
-		.sect = "__markers",
-		.entry_size = sizeof(struct marker),
-		.entry_align = __alignof__(struct marker),
-		.other_sect = "__markers_strings",
-		.other_offset = offsetof(struct marker, name),
-	},
-#endif /* LINUX_VERSION_CODE */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
 /* 97e1c18e8d17bd87e1e383b2e9d9fc740332c8e2 was after 2.6.27 */
 	{
