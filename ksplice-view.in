@@ -1,0 +1,159 @@
+#!/usr/bin/perl
+
+# Copyright (C) 2007-2009  Ksplice, Inc.
+# Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+use strict;
+use warnings;
+use lib 'KSPLICE_DATA_DIR';
+use Ksplice;
+
+my ($kid, $mid, $module, $update, $file);
+GetOptions(@common_options,
+	"id=s" => \$kid,
+	"file=s" => \$file) or pod2usage(1);
+
+pod2usage(1) if($help || scalar(@ARGV) != 0);
+my $actions = (defined $kid) + (defined $file);
+pod2usage(1) if($actions > 1);
+
+view_kid() if(defined $kid);
+view_file() if(defined $file);
+view_list() if($actions == 0);
+
+exit(0);
+
+sub view_kid {
+	$kid =~ s/^ksplice[_-]//;
+	$kid =~ s/[-_].*$//; # In case we got an mid instead
+	$update = "ksplice_$kid";
+	if(!update_loaded($kid)) {
+		print "Ksplice id $kid is not present in the kernel\n";
+		exit(0);
+	}
+	my $stage = get_stage($kid);
+	print "Ksplice id $kid is present in the kernel and is $stage.\n\n";
+	my $source_diff = get_patch($kid);
+	return if($source_diff eq "");
+	print "Here is the source code patch associated with this update:\n";
+	print $source_diff;
+}
+
+sub view_file {
+	chdir(unpack_update($file));
+	open(PATCH, '<', "patch") or die $!;
+	local $/;
+	print <PATCH>;
+	close(PATCH);
+}
+
+sub show_kid {
+	my ($kid) = @_;
+	if ($Verbose::level < 0) {
+		print "$kid\n";
+	} else {
+		my $desc = get_short_description($kid);
+		if (defined($desc)) {
+			print "$kid: $desc";
+		} else {
+			print "$kid: no description available\n";
+		}
+	}
+}
+
+sub view_list {
+	foreach(split(/\n/, runstr("lsmod"))) {
+		next unless my ($mid) = m/^ksplice_(\S*)\s/;
+		$module = "ksplice_$mid";
+		($kid = $mid) =~ s/[-_].*$//;
+		next unless (-e "/sys/module/$module/ksplice/stage");
+		open STAGE, '<', "/sys/module/$module/ksplice/stage" or die
+		    "Unable to read stage file; are you root?";
+		show_kid($kid) if(<STAGE> eq "applied\n");
+		close STAGE;
+	}
+	if (-e "/sys/kernel/ksplice") {
+		chdir("/sys/kernel/ksplice");
+		foreach $update (glob("*")) {
+			($kid = $update) =~ s/^ksplice_//;
+			show_kid($kid) if(get_stage($kid) eq "applied");
+		}
+	}
+}
+
+=head1 NAME
+
+ksplice-view - View in-kernel or on-disk Ksplice kernel updates
+
+=head1 SYNOPSIS
+
+B<ksplice-view>
+
+B<ksplice-view> B<--id=>I<KSPLICE_ID>
+
+B<ksplice-view> B<--file=>{I<UPDATE_TARBALL> | I<UPDATE_TREE>}
+
+=head1 DESCRIPTION
+
+When called with no arguments, B<ksplice-view> lists the identification tags of
+all of the Ksplice updates that are currently present in the running kernel,
+along with their descriptions.
+
+B<ksplice-view> can report about a specific Ksplice update when given the
+update's identification tag I<KSPLICE_ID> (if the update is in the kernel) or
+given the update's tarball filename I<UPDATE_TARBALL> or unpacked tree root
+I<UPDATE_TREE> (if the update is on disk).
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--id=>I<KSPLICE_ID>
+
+Report information about the Ksplice update I<KSPLICE_ID> currently loaded in
+the running kernel.
+
+=item B<--file=>{I<UPDATE_TARBALL> | I<UPDATE_TREE>}
+
+Report information about the Ksplice update on disk as the tarball
+I<UPDATE_TARBALL> or unpacked as the tree I<UPDATE_TREE>.
+
+=item B<-q>
+
+Output only the update IDs, one per line, omitting descriptions.
+
+=back
+
+=head1 SEE ALSO
+
+L<ksplice-create(8)>, L<ksplice-apply(8)>, L<ksplice-undo(8)>
+
+=head1 BUGS
+
+Please report bugs to <PACKAGE_BUGREPORT>.
+
+=head1 AUTHORS
+
+Jeff Arnold, Anders Kaseorg, and Tim Abbott
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007-2009  Ksplice, Inc.
+
+This is free software and documentation.  You can redistribute and/or modify it
+under the terms of the GNU General Public License, version 2.
+
+=cut

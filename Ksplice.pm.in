@@ -1,0 +1,347 @@
+package Ksplice;
+use Cwd qw(abs_path getcwd);
+use Getopt::Long qw(:config bundling);
+use File::Basename;
+use File::Copy;
+use File::Path;
+use File::Spec::Functions qw(tmpdir);
+use File::Temp qw(tempfile tempdir);
+use Fatal qw(:void copy rename move chdir mkdir rmdir unlink rmtree);
+use IPC::Open2;
+use IPC::Open3;
+use Pod::Usage;
+use Text::ParseWords;
+use strict;
+use warnings;
+use Verbose qw(:2 copy rename move utime chdir mkdir mkpath unlink rmtree tempfile tempdir);
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT = qw(
+	Verbose GetOptions pod2usage shellwords
+	$datadir $libexecdir @common_options $help $raw_errors
+	child_error runval runval_raw runstr runstr_err runval_in runval_infile runval_outfile
+	unpack_update
+	get_stage set_stage set_debug_level set_partial get_abort_cause get_patch update_loaded
+	get_debug_output get_conflicts get_raw_conflicts get_short_description
+	read_file write_file
+	abs_path getcwd basename dirname tmpdir
+	copy rename move utime chdir mkdir mkpath unlink rmtree tempfile tempdir
+	print_abort_error print_abort_code
+);
+
+our ($datadir, $libexecdir) = qw(KSPLICE_DATA_DIR KSPLICE_LIBEXEC_DIR);
+
+our $help = 0;
+our $raw_errors = 0;
+our $printed_abort_code;
+
+our @common_options = (
+	"help|?" => \$help,
+	"raw-errors" => \$raw_errors,
+	"version" => sub { print "Ksplice version PACKAGE_VERSION\n"; exit(0); },
+	"api-version" => sub { print "KSPLICE_API_VERSION\n"; exit(0); },
+	"verbose|v:+" => \$Verbose::level,
+	"quiet|q:+" => sub { $Verbose::level -= $_[1]; },
+);
+
+$SIG{__DIE__} = sub {
+	die @_ if $^S || !$raw_errors;
+	my ($msg) = @_;
+	if(!$printed_abort_code) {
+		print STDERR "OTHER\n$msg";
+	}
+	exit(-1);
+};
+
+sub child_error {
+	if($raw_errors) {
+		return ($? != 0);
+	}
+	if($? == -1) {
+		print STDERR "Failed to exec child\n";
+	} elsif(($? & 127) != 0) {
+		print STDERR "Child exited with signal ", ($? & 127), ($? & 128) ? " (core dumped)\n" : "\n";
+	} elsif($? >> 8 != 0) {
+		print STDERR "Child exited with status ", $? >> 8, "\n";
+	} else {
+		return 0;
+	}
+	return 1;
+}
+
+sub runval {
+	my (@cmd) = @_;
+	if(runval_raw(@cmd) != 0) {
+		child_error();
+		die "Failed during: @cmd\n";
+	}
+}
+
+sub runval_raw {
+	my (@cmd) = @_;
+	my ($out, $err);
+	print "+ @cmd\n" if($Verbose::level >= 1);
+	if($raw_errors) {
+		my $pid = open3(fileno STDIN, ">&STDOUT", ">/dev/null", @cmd);
+		waitpid($pid, 0);
+		return $?;
+	} else {
+		return system(@cmd);
+	}
+}
+
+sub runstr {
+	my @cmd = @_;
+	print "+ @cmd\n" if($Verbose::level >= 1);
+	local $/;
+	local (*PIPE);
+	if($raw_errors) {
+		open3(fileno STDIN, \*PIPE, ">/dev/null", @cmd);
+	} else {
+		open PIPE, '-|', @cmd or die "Can't run @cmd: $!";
+	}
+	my $output = <PIPE>;
+	close PIPE or $! == 0 or die "Can't run @cmd: $!";
+	return $output;
+}
+
+sub runstr_err {
+	my @cmd = @_;
+	print "+ @cmd\n" if($Verbose::level >= 1);
+	local (*ERROR);
+	my $pid = open3(fileno STDIN, '>&STDOUT', \*ERROR, @cmd);
+	local $/;
+	my $error = <ERROR>;
+	waitpid($pid, 0);
+	print STDERR $error unless $raw_errors;
+	return $error;
+}
+
+sub runval_in {
+	my ($in, @cmd) = @_;
+	print "+ @cmd <<'EOF'\n${in}EOF\n" if($Verbose::level >= 1);
+	local (*WRITE);
+	if($raw_errors) {
+		open3(\*WRITE, ">&STDOUT", ">/dev/null", @cmd);
+	} else {
+		open(WRITE, '|-', @cmd) or die "Can't run @cmd: $!";
+	}
+	print WRITE $in;
+	close(WRITE) or $! == 0 or die "Can't run @cmd: $!";
+	if(child_error()) {
+		die "Failed during: @cmd";
+	}
+}
+
+sub runval_infile {
+	my ($infile, @cmd) = @_;
+	print "+ @cmd < $infile\n" if($Verbose::level >= 1);
+	local (*INFILE);
+	open(INFILE, '<', $infile) or die "Can't open $infile: $!";
+	my $pid;
+	if($raw_errors) {
+		$pid = open3('<&INFILE', '>&STDOUT', ">/dev/null", @cmd);
+	} else {
+		$pid = open2('>&STDOUT', '<&INFILE', @cmd);
+	}
+	waitpid($pid, 0);
+	if(child_error()) {
+		die "Failed during: @cmd";
+	}
+}
+
+sub runval_outfile {
+	my ($outfile, @cmd) = @_;
+	print "+ @cmd > $outfile\n" if($Verbose::level >= 1);
+	local (*OUTFILE);
+	open(OUTFILE, '>', $outfile) or die "Can't open $outfile: $!";
+	my $pid;
+	if($raw_errors) {
+		$pid = open3('</dev/null', '>&OUTFILE', ">/dev/null", @cmd);
+	} else {
+		$pid = open2('>&OUTFILE', '</dev/null', @cmd);
+	}
+	waitpid($pid, 0);
+	if(child_error()) {
+		die "Failed during: @cmd";
+	}
+}
+
+sub unpack_update {
+	my ($file) = @_;
+	if (-d $file) {
+		return $file;
+	}
+	my $tmpdir = tempdir('ksplice-tmp-XXXXXX', TMPDIR => 1, CLEANUP => 1);
+	runval("tar", "-C", $tmpdir, "--force-local", "-zxf", $file);
+	my ($ksplice) = glob("$tmpdir/*/");
+	chop($ksplice); # remove the trailing slash
+	return $ksplice;
+}
+
+sub get_sysfs {
+	my ($kid) = @_;
+	if(! -d "/sys/module") {
+		die "/sys not mounted?\n";
+	}
+	my $update = "ksplice_$kid";
+	if (-d "/sys/kernel/ksplice/$kid") {
+		return "/sys/kernel/ksplice/$kid";
+	}
+	if (-d "/sys/module/$update/ksplice") {
+		return "/sys/module/$update/ksplice";
+	}
+	return undef;
+}
+
+sub update_loaded {
+	my ($kid) = @_;
+	return defined(get_sysfs($kid));
+}
+
+sub read_file {
+	my ($file) = @_;
+	local (*INPUT, $/);
+	open(INPUT, "<", $file) or die $!;
+	return <INPUT>;
+}
+
+sub write_file {
+	my ($file, $string) = @_;
+	local *INPUT;
+	open(INPUT, ">", $file) or die $!;
+	print INPUT $string;
+}
+
+sub read_sysfs {
+	my ($kid, $attr) = @_;
+	my $sysfs = get_sysfs($kid);
+	return undef if (!defined($sysfs));
+	return read_file("$sysfs/$attr");
+}
+
+sub write_sysfs {
+	my ($kid, $attr, $string) = @_;
+	my $sysfs = get_sysfs($kid);
+	return undef if (!defined($sysfs));
+	write_file("$sysfs/$attr", $string);
+}
+
+sub get_debug_output {
+	my ($kid, $debugfs_out) = @_;
+	my $update = "ksplice_$kid";
+	if (!$debugfs_out) {
+		(undef, $debugfs_out) = tempfile('ksplice-debug-XXXXXX', DIR => tmpdir());
+	}
+	if (runval_raw("grep", "-qFx", "nodev\tdebugfs", "/proc/filesystems") == 0) {
+		my $debugfsdir = tempdir('ksplice-debugfs-XXXXXX', TMPDIR => 1);
+		runval(qw(mount -t debugfs debugfs), $debugfsdir);
+		if (-e "$debugfsdir/$update") {
+			copy("$debugfsdir/$update", $debugfs_out);
+		}
+		runval(qw(umount), $debugfsdir);
+		rmdir($debugfsdir);
+		return $debugfs_out;
+	} elsif ($? >> 8 == 1) {
+		return ();
+	} else {
+		child_error();
+		exit(-1);
+	}
+}
+
+sub get_stage {
+	my ($kid) = @_;
+	chomp(my $result = read_sysfs($kid, "stage"));
+	return $result;
+}
+
+sub get_abort_cause {
+	my ($kid) = @_;
+	chomp(my $result = read_sysfs($kid, "abort_cause"));
+	return $result;
+}
+
+sub get_conflicts {
+	my ($kid) = @_;
+	chomp(my $conflicts = read_sysfs($kid, "conflicts"));
+	my @conflicts = split('\n', $conflicts);
+	my $out = '';
+	foreach my $conflict (@conflicts) {
+		my ($name, $pid, @symbols) = split(' ', $conflict);
+		next if (!@symbols);
+		$out .= "Process $name(pid $pid) is using the following symbols changed by update $kid:\n";
+		foreach my $symbol (@symbols) {
+			$out .= "  $symbol\n";
+		}
+	}
+	return $out;
+}
+
+sub get_raw_conflicts {
+	my ($kid) = @_;
+	my $conflicts = read_sysfs($kid, "conflicts");
+	return $conflicts;
+}
+
+sub get_patch {
+	my ($kid) = @_;
+	my $result = read_file("/var/run/ksplice/updates/$kid/patch");
+	return $result;
+}
+
+sub get_short_description {
+	my ($kid) = @_;
+	open(INPUT, "<", "/var/run/ksplice/updates/$kid/description") or return undef;
+	my $result = <INPUT>;
+	close(INPUT);
+	return $result;
+}
+
+sub set_stage {
+	my ($kid, $string) = @_;
+	write_sysfs($kid, "stage", "$string\n");
+}
+
+sub set_debug_level {
+	my ($kid, $string) = @_;
+	write_sysfs($kid, "debug", "$string\n");
+}
+
+sub set_partial {
+	my ($kid, $string) = @_;
+	write_sysfs($kid, "partial", "$string\n");
+}
+
+sub print_abort_error {
+	my ($kid, %errors) = @_;
+	my $error = get_abort_cause($kid);
+
+	print_abort_code($error, %errors);
+	if ($error eq 'code_busy') {
+		if($raw_errors) {
+			print STDERR get_raw_conflicts($kid);
+		} else {
+			print STDERR get_conflicts($kid);
+		}
+	}
+	$printed_abort_code = 1;
+}
+
+sub print_abort_code {
+	my ($error, %errors) = @_;
+	if($raw_errors) {
+		print STDERR "$error\n";
+	} else {
+		$error = "UNKNOWN" if (!exists $errors{$error});
+		print STDERR "\n$errors{$error}\n";
+	}
+	$printed_abort_code = 1;
+}
+
+END {
+	$Verbose::level = 0;
+	chdir("/");
+}
+
+1;

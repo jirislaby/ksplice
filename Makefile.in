@@ -1,0 +1,116 @@
+srcdir = @srcdir@
+VPATH = $(srcdir)
+
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+bindir = @bindir@
+sbindir = @sbindir@
+libexecdir = @libexecdir@
+mandir = @mandir@
+datadir = @datadir@
+datarootdir = @datarootdir@
+
+CC = @CC@
+CFLAGS = @CFLAGS@
+CPPFLAGS = @CPPFLAGS@
+LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@
+PACKAGE_VERSION = @PACKAGE_VERSION@
+KSPLICE_API_VERSION = @KSPLICE_API_VERSION@
+PACKAGE_BUGREPORT = @PACKAGE_BUGREPORT@
+
+perl_primary = ksplice-create ksplice-view ksplice-apply ksplice-undo Ksplice.pm ksplice-obj.pl
+perl_man = $(patsubst %,%.8,$(perl_primary))
+objutils = objmanip inspect kernel-utsname
+itab = kmodsrc/x86/libudis86/itab.h kmodsrc/x86/libudis86/itab.c
+
+have_static := $(wildcard $(srcdir)/objmanip-static)
+
+default: $(perl_primary) $(perl_man) objutils $(itab)
+	@echo "Ready for 'make install'"
+
+ifeq ($(strip $(have_static)),)
+
+objutils: $(objutils)
+
+$(addprefix install-,$(objutils)): install-%: %
+	install -m755 -D $< $(DESTDIR)$(libexecdir)/ksplice-$*
+
+else
+
+objutils:
+
+$(addprefix install-,$(objutils)): install-%: %-static
+	install -m755 -D $< $(DESTDIR)$(libexecdir)/ksplice-$*
+
+endif
+
+$(perl_primary): %: %.in Makefile
+	sed 's|PACKAGE_VERSION|$(PACKAGE_VERSION)|;s|KSPLICE_API_VERSION|$(KSPLICE_API_VERSION)|;s|PACKAGE_BUGREPORT|$(PACKAGE_BUGREPORT)|;s|KSPLICE_DATA_DIR|$(datadir)/ksplice|;s|KSPLICE_LIBEXEC_DIR|$(libexecdir)|' $< > $@
+
+$(perl_man): %.8: %
+	pod2man --center="Ksplice" --release="Ksplice v$(PACKAGE_VERSION)" --section=8 $< $@
+
+$(objutils): %: %.c objcommon.c objcommon.h kmodsrc/ksplice.h
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) $< $(srcdir)/objcommon.c $(LIBS) -o $@
+
+kmodsrcfiles = \
+	kmodsrc/ksplice.c \
+	kmodsrc/ksplice.h \
+	kmodsrc/x86/ksplice-arch.c \
+	kmodsrc/arm/ksplice-arch.c \
+	kmodsrc/old_code_loader.c \
+	kmodsrc/new_code_loader.c \
+	kmodsrc/Makefile \
+	kmodsrc/ksplice.lds.S \
+	kmodsrc/ksplice-rmsyms.lds \
+	kmodsrc/offsets.c \
+	kmodsrc/offsets.h \
+	kmodsrc/x86/udis86.h \
+	kmodsrc/x86/libudis86/decode.c \
+	kmodsrc/x86/libudis86/itab.c \
+	kmodsrc/x86/libudis86/syn-att.c \
+	kmodsrc/x86/libudis86/syn-intel.c \
+	kmodsrc/x86/libudis86/input.c \
+	kmodsrc/x86/libudis86/syn.c \
+	kmodsrc/x86/libudis86/udis86.c \
+	kmodsrc/x86/libudis86/decode.h \
+	kmodsrc/x86/libudis86/input.h \
+	kmodsrc/x86/libudis86/syn.h \
+	kmodsrc/x86/libudis86/extern.h \
+	kmodsrc/x86/libudis86/itab.h \
+	kmodsrc/x86/libudis86/types.h
+
+$(itab): kmodsrc/x86/libudis86/x86optable.xml kmodsrc/x86/libudis86/opgen.py
+	cd kmodsrc/x86/libudis86 && python opgen.py x86optable.xml
+
+$(addprefix install-,$(kmodsrcfiles)): install-%: %
+	install -m644 -D $< $(DESTDIR)$(datadir)/ksplice/$<
+
+install: default $(addprefix install-,$(objutils)) $(addprefix install-,$(kmodsrcfiles))
+	install -m644 -D ksplice-create.8 $(DESTDIR)$(mandir)/man8/ksplice-create.8
+	install -m644 -D ksplice-apply.8 $(DESTDIR)$(mandir)/man8/ksplice-apply.8
+	install -m644 -D ksplice-undo.8 $(DESTDIR)$(mandir)/man8/ksplice-undo.8
+	install -m644 -D ksplice-view.8 $(DESTDIR)$(mandir)/man8/ksplice-view.8
+	install -m755 -D ksplice-create $(DESTDIR)$(bindir)/ksplice-create
+	install -m755 -D ksplice-view $(DESTDIR)$(sbindir)/ksplice-view
+	install -m755 -D ksplice-apply $(DESTDIR)$(sbindir)/ksplice-apply
+	install -m755 -D ksplice-undo $(DESTDIR)$(sbindir)/ksplice-undo
+	install -m755 -D $(srcdir)/ksplice-cc.pl $(DESTDIR)$(datadir)/ksplice/ksplice-cc.pl
+	install -m755 -D $(srcdir)/ksplice-obj.pl $(DESTDIR)$(datadir)/ksplice/ksplice-obj.pl
+	install -m644 -D $(srcdir)/ksplice-patch/ksplice-patch.h $(DESTDIR)$(datadir)/ksplice/ksplice-patch/ksplice-patch.h
+	install -m644 -D $(srcdir)/ksplice-patch/ksplice-shadow.h $(DESTDIR)$(datadir)/ksplice/ksplice-patch/ksplice-shadow.h
+	install -m644 -D $(srcdir)/Makefile.ksplice $(DESTDIR)$(datadir)/ksplice/Makefile.ksplice
+	install -m644 -D Ksplice.pm $(DESTDIR)$(datadir)/ksplice/Ksplice.pm
+	install -m644 -D Verbose.pm $(DESTDIR)$(datadir)/ksplice/Verbose.pm
+
+clean:
+	rm -f $(perl_primary)
+	rm -f $(perl_man)
+	rm -f $(objutils)
+
+distclean: clean
+	rm -f Makefile kmodsrc/Makefile
+	rm -f $(objutils:=-static)
+	rm -f $(itab)
+	rm -f configure config.status config.log

@@ -1,0 +1,163 @@
+#!/usr/bin/perl
+
+# Copyright (C) 2008-2009  Ksplice, Inc.
+# Authors: Anders Kaseorg, Jeff Arnold, Tim Abbott
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+use strict;
+use warnings;
+use lib 'KSPLICE_DATA_DIR';
+use Ksplice;
+
+$Verbose::level = $ENV{KSPLICE_VERBOSE} if (defined $ENV{KSPLICE_VERBOSE});
+
+sub empty_diff {
+	my ($out) = @_;
+	my ($obj) = $out =~ /^(.*)\.KSPLICE$/ or die;
+	unlink "$obj.KSPLICE_new_code" if (-e "$obj.KSPLICE_new_code");
+	unlink "$obj.KSPLICE_old_code" if (-e "$obj.KSPLICE_old_code");
+	open OUT, '>', "$out.tmp";
+	close OUT;
+	rename "$out.tmp", $out;
+}
+
+sub do_snap {
+	my ($out) = @_;
+	my ($obj) = $out =~ /^(.*)\.KSPLICE$/ or die;
+	die if (!-e $obj);
+	unlink "$obj.KSPLICE_pre" if (-e "$obj.KSPLICE_pre");
+	empty_diff($out);
+}
+
+sub do_diff {
+	my ($out) = @_;
+	my ($obj) = $out =~ /^(.*)\.KSPLICE$/ or die;
+	my $obj_pre = "$obj.KSPLICE_pre";
+	die if (!-e $obj);
+	die "Patch creates new object $obj" if (!-e $obj_pre);
+	if (system('cmp', '-s', '--', $obj_pre, $obj) == 0) {
+		unlink $obj_pre;
+		return empty_diff($out);
+	}
+
+	runval("$libexecdir/ksplice-objmanip", $obj, "$obj.KSPLICE_new_code", "keep-new-code", "$obj.KSPLICE_pre", $ENV{KSPLICE_KID});
+	return empty_diff($out) if (!-e "$obj.KSPLICE_new_code");
+
+	open OUT, '>', "$out.tmp";
+	print OUT "1\n";
+	close OUT;
+	rename "$out.tmp", $out;
+
+	runval("$libexecdir/ksplice-objmanip", $obj_pre, "$obj.KSPLICE_old_code", "keep-old-code");
+}
+
+sub do_old_code {
+	my ($out) = @_;
+	my ($obj) = $out =~ /^(.*)\.KSPLICE_old_code$/ or die;
+	my $obj_pre = "$obj.KSPLICE_pre";
+	-e $obj_pre or $obj_pre = $obj;
+	runval("$libexecdir/ksplice-objmanip", $obj_pre, "$obj.KSPLICE_old_code", "keep-old-code");
+}
+
+sub link_objs {
+	my ($out, @ins) = @_;
+	if (@ins == 0) {
+		runval(shellwords($ENV{AR}), "rcs", $out);
+	} elsif (@ins == 1) {
+		copy @ins, $out;
+	} else {
+		runval(shellwords($ENV{LD}), "-r", "-o", $out, @ins);
+	}
+}
+
+sub do_combine {
+	my ($out, @ins) = @_;
+	my @new_code_objs;
+	my @old_code_objs;
+	foreach my $in (@ins) {
+		if (my ($obj) = $in =~ /^(.*)\.KSPLICE$/) {
+			next if (!-s $in);
+			push @new_code_objs, "$obj.KSPLICE_new_code";
+			push @old_code_objs, "$obj.KSPLICE_old_code";
+		} elsif (($obj) = $in =~ /^(.*)\.KSPLICE_old_code$/) {
+			push @old_code_objs, "$obj.KSPLICE_old_code"
+			    unless (@old_code_objs && $old_code_objs[$#old_code_objs] eq "$obj.KSPLICE_old_code");
+		} elsif ("$in.KSPLICE" eq $out) {
+			my $pre = "$in.KSPLICE_pre";
+			if (system('cmp', '-s', '--', $pre, $in) == 0) {
+				unlink $pre;
+			}
+		} else {
+			die "Unexpected input $in for $out";
+		}
+	}
+
+	return empty_diff($out) unless (@old_code_objs);
+
+	my ($obj) = $out =~ /^(.*)\.KSPLICE$/ or die;
+	link_objs("$obj.KSPLICE_new_code", @new_code_objs);
+	link_objs("$obj.KSPLICE_old_code", @old_code_objs);
+
+	open OUT, '>', "$out.tmp";
+	print OUT "1\n";
+	close OUT;
+	rename "$out.tmp", $out;
+}
+
+sub do_finalize {
+	my ($in, $out, $target) = @_;
+	my $ret = runval_raw("$libexecdir/ksplice-objmanip", $in, $out, "finalize", $target);
+	if ($ret == 0) {
+	} elsif ($ret >> 8 == 66) {
+		runval(shellwords($ENV{AR}), "rcs", $out);
+	} else {
+		child_error();
+	}
+}
+
+sub do_rmsyms {
+	my ($in, $out) = @_;
+	runval("$libexecdir/ksplice-objmanip", $in, $out, "rmsyms");
+}
+
+sub do_system_map_lookup {
+	my ($symarg) = @_;
+	open(SYMS, "<", "$ENV{KSPLICE_CONFIG_DIR}/System.map") or die;
+	my $line;
+	while (defined($line = <SYMS>)) {
+		my ($addr, $type, $sym, $mod) = split(/\s+/, $line);
+		if ($sym eq $symarg) { print $addr; last; }
+	}
+	close(SYMS);
+}
+
+my %handlers = (
+	'snap' => \&do_snap,
+	'diff' => \&do_diff,
+	'old_code' => \&do_old_code,
+	'combine' => \&do_combine,
+	'finalize' => \&do_finalize,
+	'rmsyms' => \&do_rmsyms,
+	'system_map_lookup' => \&do_system_map_lookup,
+);
+
+my ($cmd, @args) = @ARGV;
+if (exists $handlers{$cmd}) {
+	my $handler = $handlers{$cmd};
+	&$handler(@args);
+} else {
+	print "Usage: ksplice-obj.pl ", join('|', keys %handlers), " ...\n";
+	exit(1);
+};

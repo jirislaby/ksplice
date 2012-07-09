@@ -1,0 +1,112 @@
+m4trace:/usr/share/aclocal/ac_prog_perl_modules.m4:30: -1- AC_DEFUN([AC_PROG_PERL_MODULES], [dnl
+ac_perl_modules="$1"
+# Make sure we have perl
+if test -z "$PERL"; then
+AC_CHECK_PROG(PERL,perl,perl)
+fi
+
+if test "x$PERL" != x; then
+  ac_perl_modules_failed=0
+  for ac_perl_module in $ac_perl_modules; do
+    AC_MSG_CHECKING(for perl module $ac_perl_module)
+
+    # Would be nice to log result here, but can't rely on autoconf internals
+    $PERL "-M$ac_perl_module" -e exit > /dev/null 2>&1
+    if test $? -ne 0; then
+      AC_MSG_RESULT(no);
+      ac_perl_modules_failed=1
+   else
+      AC_MSG_RESULT(ok);
+    fi
+  done
+
+  # Run optional shell commands
+  if test "$ac_perl_modules_failed" = 0; then
+    :
+    $2
+  else
+    :
+    $3
+  fi
+else
+  AC_MSG_WARN(could not find perl)
+fi])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([^_?A[CHUM]_])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([_AC_])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([^LIBOBJS$], [do not use LIBOBJS directly, use AC_LIBOBJ (see section `AC_LIBOBJ vs LIBOBJS'])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^AS_FLAGS$])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([^_?m4_])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([^dnl$])
+m4trace:configure.ac:1: -1- m4_pattern_forbid([^_?AS_])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^SHELL$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PATH_SEPARATOR$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_NAME$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_TARNAME$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_VERSION$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_STRING$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_BUGREPORT$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_URL$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^exec_prefix$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^prefix$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^program_transform_name$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^bindir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^sbindir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^libexecdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^datarootdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^datadir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^sysconfdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^sharedstatedir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^localstatedir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^includedir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^oldincludedir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^docdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^infodir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^htmldir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^dvidir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^pdfdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^psdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^libdir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^localedir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^mandir$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_NAME$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_TARNAME$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_VERSION$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_STRING$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_BUGREPORT$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^PACKAGE_URL$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^DEFS$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^ECHO_C$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^ECHO_N$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^ECHO_T$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^LIBS$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^build_alias$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^host_alias$])
+m4trace:configure.ac:1: -1- m4_pattern_allow([^target_alias$])
+m4trace:configure.ac:2: -1- m4_pattern_allow([^KSPLICE_API_VERSION$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CFLAGS$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^LDFLAGS$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^LIBS$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CPPFLAGS$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^ac_ct_CC$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^EXEEXT$])
+m4trace:configure.ac:20: -1- m4_pattern_allow([^OBJEXT$])
+m4trace:configure.ac:23: -1- m4_pattern_allow([^HAVE_LIBIBERTY$])
+m4trace:configure.ac:29: -1- m4_pattern_allow([^HAVE_LIBBFD$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^CPP$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^CPPFLAGS$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^CPP$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^GREP$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^EGREP$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^STDC_HEADERS$])
+m4trace:configure.ac:38: -1- m4_pattern_allow([^HAVE_BFD_H$])
+m4trace:configure.ac:75: -1- m4_pattern_allow([^PATCH$])
+m4trace:configure.ac:76: -1- m4_pattern_allow([^POD2MAN$])
+m4trace:configure.ac:90: -1- AC_PROG_PERL_MODULES([Cwd Getopt::Long File::Basename File::Copy File::Path File::Spec::Functions File::Temp Fatal IPC::Open2 IPC::Open3 Pod::Usage Text::ParseWords], [], [AC_MSG_ERROR([Missing some required perl modules])])
+m4trace:configure.ac:90: -1- m4_pattern_allow([^PERL$])
+m4trace:configure.ac:94: -1- m4_pattern_allow([^LIB@&t@OBJS$])
+m4trace:configure.ac:94: -1- m4_pattern_allow([^LTLIBOBJS$])

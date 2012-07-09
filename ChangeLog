@@ -1,0 +1,100 @@
+2011-07-28 : 0.9.9.1
+ - Removed unnecessary zlib detection from configure.ac
+
+2009-08-21 : 0.9.9
+ - Added support for applying an already unpacked update tree
+ - Fixed ksplice-create when installed to a prefix other than /usr/local
+ - Improved stack check completeness for self-restarting syscalls
+
+2009-07-12 : 0.9.8
+ - Improved error handling in the Ksplice perl utilities
+ - Updated Ksplice for kernel 2.6.30
+ - Fixed several bugs in the handling of bugline patches
+
+2009-03-10 : 0.9.7
+ - Fixed a bug where Ksplice relocations were sometimes written pointing
+   to the middle of patched sections
+ - Fixed a Makefile bug where the Ksplice core module was compiled twice
+ - Renamed or reorganized several data structures in the Ksplice kernel code
+ - Changed the Ksplice module names from primary/helper to old_code/new_code
+
+2009-01-21 : 0.9.6
+ - Fixed a Makefile bug that prevented the initial prebuild from succeeding
+ - Documented the ksplice-create --series, --git, and --build-modules options
+ - Added support for changing CRCs of exported symbols
+ - Added pre-post matching of altinstructions and other table sections
+ - Fixed a build failure due to depmod when using a kbuild output directory
+
+2008-12-19 : 0.9.5
+ - Added support for building updates from Git commits in ksplice-create
+ - Prevent reversing Ksplice updates that have been partially cold applied
+
+2008-11-21 : 0.9.4
+ - Added support for patching kernels built in a separate Kbuild output
+   directory (O=dir)
+ - Added additional metadata to the Ksplice update tarballs
+ - Updated Ksplice for kernel 2.6.28
+
+2008-11-07 : 0.9.3
+ - Added hooks for calling functions at various points during the update process
+ - Added support for applying an update only to loaded target modules
+ - Added support for building updated target modules along with a Ksplice update
+ - Added run-pre matching of the bug table, exception table, and exported
+   symbol table
+ - Improved robustness of the stack check with respect to optimized tail calls
+ - Fixed several bugs in the run-pre matching disassembly code
+ - Added patching of rodata sections that did not change in size
+ - Added patching of bug table entries whose line numbers changed
+ - Added an experimental API for shadow data structures
+
+2008-10-17 : 0.9.2
+ - Added run-pre matching of string sections
+ - Fixed safety_record handling for patch reversals
+ - Improved performance substantially in both userspace and kernelspace
+ - Added support for patching kernels whose text is mapped read-only
+ - Added support for patching compilation units involving markers
+ - Improved the udis86 disassembler's support for disassembling the kernel
+
+2008-09-26 : 0.9.1
+ - Replaced objdiff with an improved matching algorithm in objmanip keep-primary
+ - Added support for moving functions between compilation units
+ - Various safety improvements
+
+2008-09-12 : 0.9.0
+ - Added support for ARM architecture (requires an -ffunction-sections kernel)
+ - Rewrote the relocation handling code to ease porting to other architectures
+ - Modified the update build system so that it uses the kernel build system
+ - Switched the module control interface from /proc to /sys
+ - Switched the preferred debugging interface from printk to debugfs
+ - Restructured the kernel code to make it easier to merge Ksplice into Linux
+ - Simplified ksplice-create by moving all ELF manipulation to objmanip
+ - Added libudis86 for enhanced run-pre matching
+ - Added support for automatically modifying the exported symbol table
+ - Various safety improvements
+
+2008-06-22 : 0.8.7
+ - Updated the nop table for binutils 2.18
+ - Improved relocation handling on x86-64
+
+2008-05-25 : 0.8.6
+ - Removed some compiler warnings
+
+2008-05-24 : 0.8.5
+ - Added a workaround for Fedora System.map problem
+ - Improved the page table code
+ - Improved kernel stack check debugging
+
+2008-04-29 : 0.8.4
+ - Fixed architecture detection on ASP Linux
+
+2008-04-28 : 0.8.3
+ - Improved kernel stack check
+
+2008-04-27 : 0.8.2
+ - Improved kernel stack check
+
+2008-04-24 : 0.8.1
+ - Fixed 2.6.25 init_mm problem
+
+2008-04-22 : 0.8.0
+ - Initial release

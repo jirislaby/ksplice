@@ -1,0 +1,531 @@
+#!/usr/bin/perl
+
+# Copyright (C) 2007-2009  Ksplice, Inc.
+# Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+use strict;
+use warnings;
+use lib 'KSPLICE_DATA_DIR';
+use Ksplice;
+
+my ($patchfile, $diffext, $git, $orig_config_dir, $jobs, $kid);
+my $description;
+my $series = 0;
+my $build_modules = 0;
+my $ksplice_short_name_hack = 0;
+my @only_targets;
+my @extra_match;
+my @exclude_match;
+my $standalone;
+my ($prebuild, $skip_prebuild) = (0, 0);
+my @patch_opt = "-p1";
+GetOptions(@common_options,
+	"id=s" => \$kid,
+	"patch=s" => \$patchfile,
+	"description=s" => \$description,
+	"diffext=s" => \$diffext,
+	"git=s" => \$git,
+	"prebuild" => \$prebuild,
+	"series!" => \$series,
+	"build-modules!" => \$build_modules,
+	"only-targets=s" => \@only_targets,
+	"extra-match=s" => \@extra_match,
+	"exclude-match=s" => \@exclude_match,
+	"standalone!" => \$standalone,
+	"short-name-hack!" => \$ksplice_short_name_hack,
+	"skip-prebuild" => \$skip_prebuild,
+	"jobs|j:i" => \$jobs,
+	"config=s" => \$orig_config_dir,
+	"patch-opt=s" => \@patch_opt) or pod2usage(1);
+
+pod2usage(1) if($help || scalar(@ARGV) != 1);
+my $actions = (defined $patchfile) + (defined $diffext) + (defined $git) + $prebuild;
+pod2usage(1) if($actions != 1);
+
+my $have_Git = eval { require Git };
+$have_Git or die $@ if defined $git;
+
+my ($linuxtree) = (abs_path($ARGV[0]));
+
+if(!defined $orig_config_dir) {
+	$orig_config_dir = "$linuxtree/ksplice";
+}
+else {
+	$orig_config_dir = abs_path($orig_config_dir);
+	if($orig_config_dir =~ $linuxtree) {
+		die "Aborting: User-specified ORIG_CONFIG cannot be KERNEL_SOURCE or a subdirectory";
+	}
+}
+if(!defined $orig_config_dir || ! -d $orig_config_dir) {
+	die "Failed to find ORIG_CONFIG directory ($orig_config_dir)";
+}
+if(! -e "$orig_config_dir/System.map") {
+	die "Failed to find System.map file in ORIG_CONFIG directory";
+}
+
+my $kernel_headers_dir = "$orig_config_dir/build";
+$kernel_headers_dir = $linuxtree unless(-d $kernel_headers_dir);
+
+my @kbuild_flags = ();
+if(-e "$orig_config_dir/flags") {
+	open(FLAGS, '<', "$orig_config_dir/flags") or die;
+	local $/;
+	@kbuild_flags = shellwords(scalar <FLAGS>);
+	close(FLAGS);
+}
+
+$ENV{KSPLICE_VERBOSE} = $Verbose::level;
+$ENV{KSPLICE_CONFIG_DIR} = $orig_config_dir;
+
+my @chars = ('a'..'z', 0..9);
+$kid = join '', map { $chars[int(rand(36))] } 0..7 if(!defined $kid);
+my $ksplice = "ksplice-$kid";
+$ENV{KSPLICE_KID} = $kid;
+
+# Some versions of Fedora have System.map files whose symbol addresses disagree
+# with the running kernel by a constant address offset.  Here, Ksplice notes the
+# System.map address for printk so that it can later compare this address against
+# the kernel's address for printk.  This comparison helps Ksplice work around
+# this Fedora problem, and this comparison also helps Ksplice detect whether
+# the user has provided an incorrect System.map file.
+my $map_printk = runstr("$datadir/ksplice-obj.pl", "system_map_lookup", "printk");
+
+print "Starting kernel builds (this process might take a long time)...\n"
+    if($Verbose::level >= 0);
+
+$patchfile = abs_path($patchfile) if(defined $patchfile);
+
+my $origdir = getcwd();
+chdir($linuxtree);
+
+my $git_rev;
+my $git_repo;
+if (defined $git) {
+	$git_repo = Git->repository();
+	($git_rev) = $git_repo->command(qw(rev-parse --verify), $git);
+} else {
+	$git_repo = eval { Git->repository() };
+}
+
+my @make = ("make", "-rR");
+if(defined $jobs) {
+	push @make, "-j$jobs";
+} elsif(defined $ENV{CONCURRENCY_LEVEL}) {
+	push @make, "-j$ENV{CONCURRENCY_LEVEL}";
+}
+
+if($Verbose::level >= 2) {
+	push @make, "V=1";
+} elsif($Verbose::level < 0) {
+	push @make, "-s";
+}
+
+$ENV{PATH} = "$datadir:$ENV{PATH}";
+my @make_ksplice = (@make, "-f", "$datadir/Makefile.ksplice", @kbuild_flags);
+
+push(@make_ksplice, "KSPLICE_BUILD_MODULES=1") if ($build_modules);
+if(-e "include/config/kernel.release") {
+	push(@make_ksplice, "-o", "include/config/kernel.release");
+}
+
+my @revert_flags = ("KSPLICE_MODE=revert");
+push(@revert_flags, "KSPLICE_SERIES=y") if ($series);
+
+sub git_have_ksplice_pre {
+	return $git_repo->command(qw(for-each-ref refs/ksplice/pre)) ne '';
+}
+
+if(-e "$orig_config_dir/.config" && !-e "$linuxtree/.config") {
+	copy("$orig_config_dir/.config", "$linuxtree/.config");
+	utime((stat("$orig_config_dir/.config"))[8, 9],
+	      "$linuxtree/.config");
+}
+
+sub revert_orig() {
+	for(split(/\0/, runstr(qw(find -name *.KSPLICE_presrc -print0)))) {
+		my ($file) = m/^(.*)\.KSPLICE_presrc$/;
+		if ($series) {
+			unlink($_);
+		} else {
+			rename($_, $file);
+		}
+	}
+	if (defined $git_repo && git_have_ksplice_pre) {
+		if ($series) {
+			$git_repo->command_noisy(qw(update-ref -m), "ksplice-create: freeze", qw(refs/ksplice/pre HEAD refs/ksplice/pre));
+		} else {
+			$git_repo->command_noisy(qw(update-index --refresh));
+			$git_repo->command_noisy(qw(read-tree -m --trivial -u refs/ksplice/pre));
+			$git_repo->command_noisy(qw(update-ref -m), "ksplice-create: revert", qw(HEAD refs/ksplice/pre HEAD));
+		}
+	}
+	runval(@make_ksplice, @revert_flags);
+}
+revert_orig();
+
+if (defined $git_repo && !git_have_ksplice_pre) {
+	$git_repo->command_noisy(qw(update-ref -m), "ksplice-create: snap", qw(refs/ksplice/pre HEAD), '');
+}
+
+if(!$skip_prebuild) {
+	if(-e "$orig_config_dir/.config") {
+		copy("$orig_config_dir/.config", "$linuxtree/.config");
+		utime((stat("$orig_config_dir/.config"))[8, 9],
+		      "$linuxtree/.config");
+	}
+	my @snap_flags = ("KSPLICE_MODE=snap");
+	runval_raw(@make_ksplice, @snap_flags) == 0 or
+	    die "Aborting: Prebuild failed";
+	sleep(1);
+}
+exit(0) if($prebuild);
+
+my $tmpdir = tempdir('ksplice-tmp-XXXXXX', TMPDIR => 1, CLEANUP => 1);
+copy($patchfile, "$tmpdir/patch") if(defined $patchfile);
+$patchfile = "$tmpdir/patch";
+
+if(defined $diffext) {
+	open(PATCH, '>', $patchfile) or die;
+	for(split(/\0/, runstr("find", "-name", "*$diffext", "-print0"))) {
+		my ($file) = /^(.*)\Q$diffext\E/ or die;
+		print PATCH runstr("diff", "-u", "--", $file, $_);
+	}
+	close(PATCH) or die;
+	@patch_opt = ("-p0");
+}
+
+my $kmodsrc = "$tmpdir/kmodsrc";
+runval("cp", "-a", "--", "$datadir/kmodsrc", $kmodsrc);
+$ENV{KSPLICE_KMODSRC} = $kmodsrc;
+
+my @make_kmodsrc = (@make, "-C", $kernel_headers_dir, "M=$kmodsrc", "KSPLICE_KID=$kid", "KSPLICE_VERSION=PACKAGE_VERSION", "map_printk=$map_printk");
+
+if (!defined($standalone)) {
+	$standalone = (!-e "$linuxtree/.config" || runval_raw(qw(grep -q ^CONFIG_KSPLICE=[ym]$), "$linuxtree/.config") != 0);
+}
+push(@make_kmodsrc, "KSPLICE_STANDALONE=1") if ($standalone);
+push(@make_kmodsrc, "KSPLICE_SHORT_NAME_HACK=1") if ($ksplice_short_name_hack);
+
+my @make_kmodsrc_install = (@make_kmodsrc, qw(modules_install --old-file=_modinst_post --old-file=_emodinst_post), "MAKE=make --old-file=_modinst_post --old-file=_emodinst_post", "INSTALL_MOD_STRIP=1", "MODLIB=$tmpdir/ksplice-modules");
+
+runval(@make_kmodsrc);
+runval(@make_kmodsrc_install);
+
+@patch_opt = ("-s", @patch_opt) if ($Verbose::level < 0);
+
+if (defined $git) {
+	$git_repo->command_noisy(qw(update-index --refresh));
+	$git_repo->command_noisy(qw(read-tree -m --trivial -u), $git_rev);
+	$git_repo->command_noisy(qw(update-ref -m), "ksplice-create: diff", "HEAD", $git_rev);
+
+	open(PATCH, '>', $patchfile) or die;
+	if ($git_repo->command(qw(rev-parse --verify HEAD^)) eq
+	    $git_repo->command(qw(rev-parse --verify refs/ksplice/pre))) {
+		print PATCH scalar($git_repo->command(qw(log -1 HEAD --))), "\n";
+	}
+	print PATCH scalar($git_repo->command(qw(diff-tree -p refs/ksplice/pre HEAD --)));
+	close(PATCH) or die;
+} else {
+	runval_infile($patchfile, "patch", @patch_opt, "-bz", ".KSPLICE_presrc");
+}
+
+my @diff_flags = ("KSPLICE_MODE=diff");
+push @diff_flags, "KSPLICE_EXTRA_MATCH=@extra_match" if (@extra_match);
+push @diff_flags, "KSPLICE_EXCLUDE_MATCH=@exclude_match" if (@exclude_match);
+push @diff_flags, "KSPLICE_ONLY_TARGETS=@only_targets" if (@only_targets);
+if(runval_raw(@make_ksplice, @diff_flags) != 0) {
+	revert_orig() if(defined($diffext));
+	die "Aborting: Applying the patch appears to break the kernel build";
+}
+
+sub copy_debug {
+	my ($file) = @_;
+	my ($dir, $base) = (dirname($file), basename($file));
+	-d "$tmpdir/objects/$dir" or mkpath("$tmpdir/objects/$dir");
+	copy($file, "$tmpdir/objects/$file");
+	my $cmdfile = "$dir/.$base.cmd";
+	copy($cmdfile, "$tmpdir/objects/$cmdfile") if(-e $cmdfile);
+}
+
+mkdir("$tmpdir/objects");
+for (split(/\0/, runstr(qw(find -name *.KSPLICE* ! ( -name *.KSPLICE -empty ) ! -name .*.KSPLICE.cmd -print0)))) {
+	next if (basename($_) =~ m/^(?:vmlinux|vmlinux\.o|\.tmp_vmlinux[0-9]+|\.tmp_kallsyms[0-9]+\.o|built-in\.o)\.KSPLICE_pre$/);
+	copy_debug($_);
+	copy_debug($1) if (m/^(.*)\.KSPLICE_pre(?:src)?$/);
+}
+
+my @modulepaths = ();
+my @modules = ();
+foreach(glob("$kmodsrc/*.mod.KSPLICE")) {
+	open MOD, '<', $_;
+	chomp(my $mod = <MOD>);
+	close MOD;
+	push @modulepaths, "$mod.ko" if (basename($mod) ne "vmlinux");
+	push @modules, basename($mod);
+}
+
+if(!@modules) {
+	revert_orig() if(defined($diffext));
+	print STDERR "No changes detected.\n";
+	exit(66);
+}
+
+if ($build_modules) {
+	mkdir("$tmpdir/modules");
+	runval(@make_ksplice, "KSPLICE_MODE=modinst", "MODLIB=$tmpdir/modules", "INSTALL_MOD_STRIP=1", "modules=@modulepaths");
+}
+
+revert_orig() if(defined($diffext));
+
+runval(@make_kmodsrc, "KSPLICE_MODULES=@modules", "KSPLICE_SKIP_CORE=1");
+runval(@make_kmodsrc_install, "KSPLICE_MODULES=@modules", "KSPLICE_SKIP_CORE=1");
+
+chdir($tmpdir);
+mkdir($ksplice);
+move($patchfile, $ksplice);
+if ($description) {
+	write_file("$ksplice/description", "$description\n");
+}
+write_file("$ksplice/api-version", "KSPLICE_API_VERSION\n");
+write_file("$ksplice/timestamp", time() . "\n");
+runval_outfile("$ksplice/utsname", "$libexecdir/ksplice-kernel-utsname", "$kmodsrc/offsets.o");
+
+mkdir("inspect");
+
+open(CONTENTS, ">", "$ksplice/contents");
+foreach my $mod (@modules) {
+	(my $target = $mod) =~ s/-/_/g;
+	my $mid = "${kid}_$target";
+	my $module = "ksplice-$mid";
+	my ($new, $old);
+	unless($ksplice_short_name_hack) {
+		$new = "new";
+		$old = "old";
+	} else {
+		$new = "n";
+		$old = "o";
+	}
+	rename("$tmpdir/ksplice-modules/extra/$module-$new.ko",
+	       "$ksplice/$module-$new.ko");
+	runval_outfile("inspect/$module-$new",
+		       "$libexecdir/ksplice-inspect",
+		       "$ksplice/$module-$new.ko");
+	rename("$tmpdir/ksplice-modules/extra/$module-$old.ko",
+	       "$ksplice/$module-$old.ko");
+	runval_outfile("inspect/$module-$old",
+		       "$libexecdir/ksplice-inspect",
+		       "$ksplice/$module-$old.ko");
+
+	print CONTENTS "change $target ksplice_${mid}_$new $module-$new.ko",
+	                             " ksplice_${mid}_$old $module-$old.ko\n";
+}
+if ($standalone) {
+	rename("$tmpdir/ksplice-modules/extra/ksplice-$kid.ko", "$ksplice/ksplice-$kid.ko");
+	print CONTENTS "core ksplice_$kid ksplice-$kid.ko\n";
+}
+if ($build_modules) {
+	foreach my $mod (@modulepaths) {
+		(my $target = basename($mod)) =~ s/-/_/g;
+		print CONTENTS "module $target $mod\n";
+	}
+}
+
+mkdir("$ksplice/debug");
+rename("objects", "$ksplice/debug/objects");
+rename("inspect", "$ksplice/debug/inspect");
+rename("modules", "$ksplice/modules") if ($build_modules);
+rename("$kmodsrc", "$ksplice/debug/kmodsrc");
+
+close(CONTENTS);
+runval("tar", "czf", "$ksplice.tar.gz", "--", $ksplice);
+copy("$ksplice.tar.gz", "$origdir/$ksplice.tar.gz");
+print "Ksplice update tarball written to $ksplice.tar.gz\n";
+exit(0);
+
+=head1 NAME
+
+ksplice-create - Create a set of kernel modules for a rebootless kernel update
+
+=head1 SYNOPSIS
+
+B<ksplice-create> [I<OPTIONS>] B<--patch=>I<PATCH_FILE> I<KERNEL_SOURCE>
+
+B<ksplice-create> [I<OPTIONS>] B<--diffext=>I<EXTENSION> I<KERNEL_SOURCE>
+
+B<ksplice-create> [I<OPTIONS>] B<--git=>I<COMMIT> I<KERNEL_SOURCE>
+
+B<ksplice-create> [I<OPTIONS>] B<--prebuild> I<KERNEL_SOURCE>
+
+=head1 DESCRIPTION
+
+B<ksplice-create> creates a set of Ksplice kernel modules that, when loaded,
+will apply a user-specified source code patch to the running binary kernel.
+
+Before you use B<ksplice-create> on a patch, you should confirm that the
+desired source code change does not make any semantic changes to kernel data
+structures--that is, changes that would require existing instances of kernel
+data structures to be transformed (e.g., a patch that adds a field to a global
+data structure would require the existing data structures to change).  If you
+use Ksplice on a patch that changes data structure semantics, Ksplice will not
+detect the problem and you could experience kernel problems as a result.
+
+The to-be-applied source code patch can be specified by providing a L<patch(1)>
+file (B<--patch=>I<PATCH_FILE>) or by providing a file extension
+(B<--diffext=>I<EXTENSION>).
+
+If a file extension is specified, then the desired source code patch will be
+determined by comparing all of the files in the I<KERNEL_SOURCE> directory tree
+whose names end with the extra extension I<EXTENSION> against the corresponding
+files without the extra extension.  Only the new files containing the extra
+extension in their filenames should be modified.
+
+Here is an example of using a file extension to specify a patch:
+
+ $ cp KERNEL_SOURCE/kernel/sys.c KERNEL_SOURCE/kernel/sys.c.prctl_fixed
+ [edit sys.c.prctl_fixed to include the desired changes]
+ $ ksplice-create --diffext=.prctl_fixed KERNEL_SOURCE
+
+KERNEL_SOURCE must be a directory containing the to-be-updated kernel's
+original source code.  If your Linux distribution applies patches to the Linux
+kernel during the kernel build process, then those patches must be applied to
+the I<KERNEL_SOURCE> directory before invoking B<ksplice-create> on that
+directory.  B<ksplice-create> will not modify the source code in the
+I<KERNEL_SOURCE> directory tree, but it will perform a kernel build in that
+directory tree.
+
+I<ORIG_CONFIG> can be used to specify the directory containing the
+to-be-updated kernel's original F<.config> file and original F<System.map> file
+(the files should have exactly those names).  I<ORIG_CONFIG> defaults to
+I<KERNEL_SOURCE>B</ksplice>.
+
+The default L<gcc(1)> compiler and L<as(1)> assembler on the system should be as
+close to the compiler and assembler originally used to build the running kernel
+as possible.  If the current compiler and linker are too different from the
+original compiler and linker, B<ksplice-apply> will abort when applying the
+update.
+
+B<ksplice-create> outputs a L<tar(1)> file, compressed with L<gzip(1)>,
+containing the desired Ksplice update modules.  This tarball will be created in
+the current directory, and it can be manipulated using the other Ksplice
+utilities, such as B<ksplice-apply>.
+
+The first time that B<ksplice-create> is invoked on a I<KERNEL_SOURCE>
+directory, it must build that kernel from scratch, which is much slower than
+the rest of the update-creation process.  B<--prebuild> can be used to perform
+this initial kernel build without providing a source code patch.
+
+In order to patch a function that has previously been patched by Ksplice, the
+user needs to ensure that the I<KERNEL_SOURCE> directory provided to Ksplice
+contains the source for the currently running kernel, including any patches
+that have previously been applied by Ksplice.
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--patch=>I<PATCH_FILE>
+
+Builds a Ksplice update out of the given L<patch(1)> file I<PATCH_FILE>.
+
+=item B<--diffext=>I<EXTENSION>
+
+Builds a Ksplice update using the modified source files with names ending in
+I<EXTENSION>.  The patch will be determined by comparing all of the files in the
+I<KERNEL_SOURCE> directory tree whose names end with the extra extension
+I<EXTENSION> against the corresponding files without the extra extension.
+
+=item B<--git>=I<COMMIT>
+
+Builds a Ksplice update using the commit I<COMMIT> in the Git working tree
+I<KERNEL_SOURCE>.  The original state corresponding to the running kernel is
+remembered in the Git ref B<refs/ksplice/pre>, which will be created from the
+current B<HEAD> if it does not yet exist (and can be changed using the
+B<--series> option).  Therefore, the source code change to be applied
+corresponds to the output of B<git diff ksplice/pre> I<COMMIT>.
+
+=item B<--prebuild>
+
+Compiles the original source code that will be needed to build future Ksplice
+updates.  If any Ksplice updates have previously been built in the
+I<KERNEL_SOURCE> tree, the source files in the tree are reverted to their
+original state.
+
+=item B<--series>
+
+Specifies that the current state of the I<KERNEL_SOURCE> tree should be used as
+the original source that corresponds to the running kernel.  If a Ksplice update
+has recently been built in the I<KERNEL_SOURCE> tree, this option specifies that
+the Ksplice update being built should be applied after the previous update in
+series.  This option can be used with B<--prebuild> to forget the previous
+original state and perform no other action.
+
+=item B<--build-modules>
+
+For a patch that includes changes to kernel modules, in addition to building a
+hot update that can be applied to the running kernel, this option will cause
+B<ksplice-create> to generate a set of new modules based on the updated source
+code.  These modules can be used to replace the kernel modules stored on disk,
+where they can later be loaded normally after part of the hot update has been
+applied using L<ksplice-apply(1)> B<--partial>.
+
+=item B<-v>, B<--verbose>
+
+Causes B<ksplice-create> to print debugging messages about its progress.  Using
+multiple -v options increases the verbosity.  The maximum is 2.
+
+=item B<-j> I<JOBS>, B<--jobs=>I<JOBS>
+
+Specifies the number of jobs to run simultaneously while performing kernel
+builds.  B<ksplice-create> also honors the environment variable
+CONCURRENCY_LEVEL.
+
+=item B<--patch-opt=>I<OPTIONS>
+
+Can be used to pass options to L<patch(1)>.  If this option is NOT specified, then
+B<-p1> is passed to B<patch>.  If this option is specified, then only the
+specified options will be passed to B<patch>.  This option can be repeated in
+order to pass multiple options to B<patch>.  This option is ignored when the
+to-be-applied source code patch is specified using B<--diffext>.
+
+=item B<--id=>I<ID>
+
+Specifies the unique value that will be used as the identifier of the
+Ksplice update.  This identifier will, for example, appear in the name
+of the update tarball.  By default, a random 8-character ID will be
+generated.
+
+=back
+
+=head1 SEE ALSO
+
+L<ksplice-apply(8)>, L<ksplice-view(8)>, L<ksplice-undo(8)>
+
+=head1 BUGS
+
+Please report bugs to <PACKAGE_BUGREPORT>.
+
+=head1 AUTHORS
+
+Jeff Arnold, Anders Kaseorg, and Tim Abbott
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007-2009  Ksplice, Inc.
+
+This is free software and documentation.  You can redistribute and/or modify it
+under the terms of the GNU General Public License, version 2.
+
+=cut

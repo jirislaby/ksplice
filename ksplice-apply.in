@@ -1,0 +1,336 @@
+#!/usr/bin/perl
+
+# Copyright (C) 2007-2009  Ksplice, Inc.
+# Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+use strict;
+use warnings;
+use sigtrap 'handler', \&handler, qw(normal-signals error-signals);
+use lib 'KSPLICE_DATA_DIR';
+use Ksplice;
+
+our %apply_errors;
+initialize_abort_code_table();
+
+my $debug;
+my $debugon = 0;
+my $partial = 0;
+GetOptions(@common_options,
+	"partial" => \$partial,
+	"debug" => \$debugon,
+	"debugfile=s" => \$debug) or pod2usage(1);
+
+pod2usage(1) if($help || scalar(@ARGV) != 1);
+
+my $file = $ARGV[0];
+$debugon = 1 if(defined $debug);
+$debug = abs_path($debug) if (defined $debug);
+
+chdir(unpack_update($file));
+
+die "No contents file in $file\n" if (!-e "contents");
+open(CONTENTS, '<', "contents");
+my $core;
+my @changes;
+my $kid;
+while (<CONTENTS>) {
+	my ($type, @args) = split(' ', $_);
+	if ($type eq 'core') {
+		die "Multiple core modules in $file!" if (defined $core);
+		$core = {};
+		@$core{qw(module file)} = @args;
+	} elsif ($type eq 'change') {
+		my $change = {};
+		@$change{qw(target new_code new_code_file old_code old_code_file)} = @args;
+		push @changes, $change;
+		my ($ckid) = $change->{'new_code'} =~ m/^ksplice_([^-_]+)_/ or die "Bad new_code $change->{'new_code'}";
+		!$kid or $kid eq $ckid or die "Multiple kids";
+		$kid = $ckid;
+	}
+}
+$kid or die "No kid";
+close(CONTENTS);
+
+die "Update was built using an old version of Ksplice" if (@changes == 0);
+
+my $nounload = runstr("lsmod") =~ m/- $/m;
+
+my $update = "ksplice_$kid";
+if(update_loaded($kid)) {
+	my $stage = get_stage($kid);
+	if ($stage eq "applied") {
+		print STDERR "Ksplice update $kid already applied.\n" unless $raw_errors;
+		exit(0);
+	}
+	die "Reversed Ksplice module $update already loaded!" if ($stage eq "reversed");
+}
+
+runstr_err(qw(modprobe -q ksplice)) eq "" or die("Error loading Ksplice module.\n");
+if (defined $core) {
+	die "Could not find Ksplice core module $core->{file}\n" if (!-e $core->{file});
+	if (runstr("lsmod") =~ m/^\Q$core->{module}\E\s+/) {
+		die "Ksplice core module $core already loaded.";
+	}
+	if (!load_module($core->{file}, "debug=$debugon")) {
+		die "Error loading Ksplice core module $core->{module} for update $kid";
+	}
+}
+
+foreach my $change (@changes) {
+	die unless (-e $change->{old_code_file} && -e $change->{new_code_file});
+	if ($change->{'target'} ne 'vmlinux' &&
+	    runstr("lsmod") !~ m/^\Q$change->{target}\E\s+/m) {
+		if (!$partial) {
+			cleanup_modules();
+			print_abort_code("target_not_loaded", %apply_errors);
+			die "Module $change->{target} to be patched not loaded";
+		}
+	}
+}
+
+foreach my $change (@changes) {
+	if(!load_module($change->{new_code_file})) {
+		die "Error loading new code module $change->{new_code}";
+	}
+	if(!load_module($change->{old_code_file})) {
+		if($debugon) {
+			my $debugfile = get_debug_output("init_$kid", $debug);
+			print("Debugging output saved to $debugfile\n") if $debugfile;
+		}
+		cleanup_modules();
+		die("Error loading old code module $change->{old_code}\n");
+	}
+}
+
+mkpath("/var/run/ksplice/updates/$kid");
+copy("patch", "/var/run/ksplice/updates/$kid/patch") if (-e "patch");
+copy("description", "/var/run/ksplice/updates/$kid/description") if (-e "description");
+
+set_debug_level($kid, $debugon);
+set_partial($kid, $partial);
+set_stage($kid, "applied");
+my $stage = get_stage($kid);
+if($stage ne 'applied') {
+	print STDERR "Error applying Ksplice update $kid:\n" unless $raw_errors;
+	print_error($kid);
+
+	if ($debugon) {
+		my $debugfile = get_debug_output($kid, $debug);
+		print("Debugging output saved to $debugfile\n") if $debugfile;
+	}
+
+	rmtree("/var/run/ksplice/updates/$kid") if (-e "/var/run/ksplice/updates/$kid");
+	cleanup_modules();
+
+	exit(-1);
+}
+
+if (!$nounload) {
+	foreach my $change (@changes) {
+		runval('rmmod', $change->{old_code});
+		runval('rmmod', $change->{new_code}) if ($partial && refcount($change->{new_code}) == 0);
+	}
+}
+
+print "Done!\n";
+exit(0);
+
+my @modules_loaded = qw();
+
+sub handler {
+	my ($sig) = @_;
+	die "caught SIG$sig, abort\n" if (!defined($kid));
+	die "caught SIG$sig after finished\n"
+	    if (update_loaded($kid) && (get_stage($kid) eq 'applied'));
+	print STDERR "caught SIG$sig, aborting\n";
+	rmtree("/var/run/ksplice/updates/$kid") if (-e "/var/run/ksplice/updates/$kid");
+	cleanup_modules();
+	exit(1);
+}
+
+sub load_module {
+	my ($module, @params) = @_;
+	push @modules_loaded, ($module =~ m/^(.*)\.ko$/);
+	if (runval_raw("insmod", $module, @params) != 0) {
+		pop @modules_loaded;
+		child_error();
+		return 0;
+	}
+	return 1;
+}
+
+sub refcount {
+	my ($module) = @_;
+	$module =~ s/-/_/g;
+	foreach(split(/\n/, runstr("lsmod"))) {
+		if (m/^(\S+)\s+[0-9]+\s+([0-9])+\s/) {
+			return $2 if ($1 eq $module);
+		}
+	}
+	return -1;
+}
+
+sub cleanup_modules {
+	foreach my $module (reverse(@modules_loaded)) {
+		runval_raw("rmmod", $module) if(!$nounload);
+	}
+}
+
+sub initialize_abort_code_table {
+	%apply_errors = (
+		"no_match" => <<'END',
+Ksplice has aborted the upgrade because Ksplice has been unable to match the
+object code produced by your current compiler and assembler against the running
+kernel's object code.  If you provided the exact kernel source to the running
+kernel, then it appears that your current compiler and/or assembler are
+behaving differently from the compiler and assembler used to build the running
+kernel.  If possible, please use the exact compiler and assembler that were
+used to build the running kernel.  If you are using exactly the same compiler
+and assembler, consider reporting a bug to PACKAGE_BUGREPORT.
+END
+		"code_busy" => <<'END',
+Ksplice has aborted the upgrade because it appears that the code that you are
+trying to patch is continuously in use by the system.  More specifically,
+Ksplice has been unable to find a moment when one or more of the to-be-patched
+functions is not on a thread's kernel stack.
+END
+		"bad_system_map" => <<'END',
+Ksplice has aborted the upgrade because it appears that the System.map file
+provided to ksplice-create does not match the running kernel.
+END
+		"failed_to_find" => <<'END',
+Ksplice has aborted the upgrade because it was unable to resolve some of the
+symbols used in the update.
+END
+		"already_reversed" => <<'END',
+The Ksplice update that you are attempting to apply has already been applied
+and reversed.  You need to unload the Ksplice modules associated with this
+update before you can apply this update again.
+END
+		"missing_export" => <<'END',
+Ksplice has aborted the upgrade because the symbols exported by the kernel
+did not match Ksplice's expectations.
+END
+		"unexpected_running_task" => <<'END',
+Ksplice has aborted the upgrade because of an unexpected failure during the
+kernel stack check.  Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+		"target_not_loaded" => <<'END',
+Ksplice has aborted the upgrade because one of the modules to be
+patched by the update was not loaded.  If you want to apply this
+update only to those modules that are loaded, then you should use the
+--partial option.
+END
+		"out_of_memory" => <<'END',
+Ksplice has aborted the upgrade because the kernel ran out of memory.
+END
+		"call_failed" => <<'END',
+Ksplice has aborted the upgrade at the request of a one of the
+pre-application hooks that were included as part of this Ksplice
+update.  This is likely the result of a bug in the patch used to
+generate this update.
+END
+		"unexpected" => <<'END',
+Ksplice has aborted because of an unexpected error.
+Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+		"UNKNOWN" => <<'END',
+The Ksplice kernel component has returned an error code that this version of
+ksplice-apply does not understand.
+END
+		"ok" => <<'END',
+Ksplice has aborted the upgrade for unknown reasons.
+Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+	);
+}
+
+sub print_error {
+	my ($kid) = @_;
+	print_abort_error($kid, %apply_errors);
+}
+
+=head1 NAME
+
+ksplice-apply - Apply an on-disk Ksplice update to the running kernel
+
+=head1 SYNOPSIS
+
+B<ksplice-apply> [I<OPTIONS>] {I<UPDATE_TARBALL> | I<UPDATE_TREE>}
+
+=head1 DESCRIPTION
+
+B<ksplice-apply> takes as input a Ksplice update, as generated by
+L<ksplice-create(8)>, and it applies the update to the running binary kernel.
+The update may be supplied in the form of a tarball or an unpacked tree.
+
+The update is required to have been generated for the running kernel's
+version.
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--debug>
+
+Applies the update with debugging output enabled.  Recommended only for
+debugging.
+
+=item B<--debugfile=>I<filename>
+
+Sets the location where debugging output should be saved.  Implies --debug.
+
+=item B<--partial>
+
+Applies the update only to those modules which are loaded.  Any
+modules patched by the update that are not loaded are ignored (without
+this option, Ksplice aborts if any modules patched by the update are
+not loaded).
+
+=item B<--raw-errors>
+
+Print only raw error information designed to be machine-readable on
+standard error (standard output is still intended to be
+human-readable).  If B<ksplice-apply> fails due to an error from the
+Ksplice kernel modules, the first line on standard error will be a
+Ksplice B<abort code> (see the Ksplice source code for documentation
+on these codes).  Further lines will vary depending on the abort code.
+If B<ksplice-apply> fails for any other reason, it will output the
+line C<"OTHER\n">, followed by a human-readable failure message, to
+standard error.
+
+=back
+
+=head1 SEE ALSO
+
+L<ksplice-create(8)>, L<ksplice-view(8)>, L<ksplice-undo(8)>
+
+=head1 BUGS
+
+Please report bugs to <PACKAGE_BUGREPORT>.
+
+=head1 AUTHORS
+
+Jeff Arnold, Anders Kaseorg, and Tim Abbott
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007-2009  Ksplice, Inc.
+
+This is free software and documentation.  You can redistribute and/or modify it
+under the terms of the GNU General Public License, version 2.
+
+=cut

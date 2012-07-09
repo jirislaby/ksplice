@@ -1,0 +1,109 @@
+prefix = @prefix@
+datarootdir = @datarootdir@
+datadir = @datadir@
+
+ksplice-script = $(datadir)/ksplice/ksplice-obj.pl
+
+KSPLICE_KID ?= $(error "You must set KSPLICE_KID.")
+KSPLICE_VERSION ?= $(error "You must set KSPLICE_VERSION.")
+map_printk ?= $(error "You must set map_printk.")
+
+ifneq ($(KSPLICE_STANDALONE),)
+    KSPLICE_CFLAGS += -DKSPLICE_STANDALONE
+endif
+KSPLICE_CFLAGS += -DKSPLICE_KID=$(KSPLICE_KID)
+KSPLICE_CFLAGS += -DMAP_PRINTK=0x$(map_printk)L
+
+comma ?= ,
+name-fix ?= $(subst $(comma),_,$(subst -,_,$(1)))
+target = $(call name-fix,$(mod))
+KSPLICE_MID = $(KSPLICE_KID)_$(target)
+KSPLICE = ksplice-$(KSPLICE_MID)
+KSPLICE_CORE = ksplice-$(KSPLICE_KID)
+
+quiet_cmd_ksplice-collect = COLLECT $@
+cmd_ksplice-collect = \
+	$(ksplice-script) finalize $< $<.final $* && \
+	$(LD) --script=$(obj)/ksplice.lds -r -o $@ $<.final
+
+ksplice-mod-cflags = $(KSPLICE_CFLAGS) \
+	"-DKSPLICE_MID=$(KSPLICE_MID)" \
+	$(addprefix -DKSPLICE_TARGET=,$(target)) \
+	"-DKSPLICE_VERSION=\"$(KSPLICE_VERSION)\""
+
+ksplice-new-code-objs = new-code-$(target).o collect-new-code-$(mod).o
+ksplice-old-code-objs = old-code-$(target).o collect-old-code-$(mod).o
+
+ifneq ($(KSPLICE_STANDALONE),)
+ifeq ($(KSPLICE_SKIP_CORE),)
+obj-m += $(KSPLICE_CORE).o
+endif
+UDIS86 = x86/libudis86
+kudis86 += \
+	$(UDIS86)/itab.o \
+	$(UDIS86)/input.o \
+	$(UDIS86)/decode.o \
+	$(UDIS86)/syn.o \
+	$(UDIS86)/syn-intel.o \
+	$(UDIS86)/syn-att.o \
+	$(UDIS86)/udis86.o
+$(KSPLICE_CORE)-objs = $(fake-ksplice.o) ksplice-rmsyms.o $(kudis86)
+fake-ksplice.o = ksplice.o
+$(obj)/$(KSPLICE_CORE).o: fake-ksplice.o =
+endif
+
+define ksplice-mod-vars
+ifneq ($(KSPLICE_SHORT_NAME_HACK),)
+obj-m += $(KSPLICE)-n.o $(KSPLICE)-o.o
+$(KSPLICE)-n-objs = $(ksplice-new-code-objs)
+$(KSPLICE)-o-objs = $(ksplice-old-code-objs)
+else
+obj-m += $(KSPLICE)-new.o $(KSPLICE)-old.o
+$(KSPLICE)-new-objs = $(ksplice-new-code-objs)
+$(KSPLICE)-old-objs = $(ksplice-old-code-objs)
+endif
+CFLAGS_new-code-$(target).o = $(ksplice-mod-cflags)
+CFLAGS_old-code-$(target).o = $(ksplice-mod-cflags)
+CPPFLAGS_ksplice.lds = $(ksplice-mod-cflags) -P
+endef
+
+$(foreach mod,$(KSPLICE_MODULES),$(eval $(ksplice-mod-vars)))
+
+ifneq ($(KSPLICE_MODULES),)
+$(foreach mod,$(KSPLICE_MODULES),$(obj)/new-code-$(target).o): $(obj)/%.o: $(src)/new_code_loader.c FORCE
+	$(call if_changed_rule,cc_o_c)
+$(foreach mod,$(KSPLICE_MODULES),$(obj)/old-code-$(target).o): $(obj)/%.o: $(src)/old_code_loader.c FORCE
+	$(call if_changed_rule,cc_o_c)
+endif
+
+$(obj)/collect-new-code-%.o: $(obj)/%.o.KSPLICE_new_code $(obj)/ksplice.lds FORCE
+	$(call if_changed,ksplice-collect)
+$(obj)/collect-old-code-%.o: $(obj)/%.o.KSPLICE_old_code $(obj)/ksplice.lds FORCE
+	$(call if_changed,ksplice-collect)
+
+ifeq ($(quiet_cmd_cpp_lds_S),)
+quiet_cmd_cpp_lds_S = LDS     $@
+      cmd_cpp_lds_S = $(CPP) -Wp,-MD,$(depfile) $(NOSTDINC_FLAGS) $(CPPFLAGS) $(EXTRA_CPPFLAGS) $(CPPFLAGS_$(@F)) $(cpp_flags) -D__ASSEMBLY__ -o $@ $<
+
+%.lds: %.lds.S FORCE
+	$(call if_changed_dep,cpp_lds_S)
+endif
+
+$(obj)/ksplice.lds: $(src)/ksplice.lds.S FORCE
+	$(call if_changed_dep,cpp_lds_S)
+
+CFLAGS_offsets.o += $(KSPLICE_CFLAGS)
+ifeq ($(KSPLICE_SKIP_CORE),)
+extra-y += offsets.o
+endif
+
+ifneq ($(KSPLICE_STANDALONE),)
+CFLAGS_ksplice.o += $(KSPLICE_CFLAGS)
+
+quiet_cmd_ksplice-rmsyms = RMSYMS  $@
+cmd_ksplice-rmsyms = \
+	$(ksplice-script) rmsyms $< $<.rmsyms && \
+	$(LD) --script=$(src)/ksplice-rmsyms.lds -r -o $@ $<.rmsyms
+$(obj)/ksplice-rmsyms.o: $(obj)/ksplice.o $(obj)/offsets.o FORCE
+	$(call if_changed,ksplice-rmsyms)
+endif # KSPLICE_STANDALONE

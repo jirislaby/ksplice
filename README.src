@@ -1,0 +1,17 @@
+Ksplice
+Copyright (C) 2007-2009  Ksplice, Inc.
+Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License, version 2.
+
+For more information about Ksplice, please see <http://www.ksplice.com/>.
+
+Installation instructions:
+ $ ./configure
+ $ make
+ $ make install
+
+Notable Build Dependencies:
+ - GNU binary file descriptor (BFD) library (version 2.15 or later)
+   (available in Debian's binutils-dev package and in other distributions)

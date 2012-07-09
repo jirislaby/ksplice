@@ -1,0 +1,220 @@
+#!/usr/bin/perl
+
+# Copyright (C) 2007-2009  Ksplice, Inc.
+# Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License, version 2.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street - Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
+use strict;
+use warnings;
+use lib 'KSPLICE_DATA_DIR';
+use Ksplice;
+my $have_usleep = eval { require Time::HiRes };
+
+my $debug;
+my $debugon = 0;
+GetOptions(@common_options,
+	"debug" => \$debugon,
+	"debugfile=s" => \$debug) or pod2usage(1);
+
+pod2usage(1) if($help || scalar(@ARGV) != 1);
+$debugon = 1 if (defined($debug));
+$debug = abs_path($debug) if (defined $debug);
+
+my $kid = $ARGV[0];
+$kid =~ s/^ksplice[-_]//;
+$kid =~ s/[-_].*$//;
+my $update = "ksplice_$kid";
+my $nounload = runstr("lsmod") =~ m/- $/m;
+
+chdir("/sys/module");
+
+if (!update_loaded($kid)
+    && !-e $update && !defined(glob("${update}_*_{o,n,old,new}"))) {
+	print "Ksplice id $kid is not present in the kernel\n";
+	rmtree("/var/run/ksplice/updates/$kid") if (-e "/var/run/ksplice/updates/$kid");
+	exit(1);
+}
+
+set_debug_level($kid, $debugon);
+my $failed = 0;
+
+foreach my $module (glob("${update}_*_{o,old}")) {
+	if (!$nounload && runval_raw('rmmod', $module) != 0) {
+		child_error();
+		error_die();
+	}
+}
+
+my $have_sysfs = update_loaded($kid);
+my $stage = ($have_sysfs && get_stage($kid));
+if ($stage ne 'applied') {
+	print "Ksplice id $kid is not applied; just cleaning up\n";
+}
+else {
+	set_stage($kid, "reversed");
+}
+$stage = ($have_sysfs && get_stage($kid));
+($stage eq 'reversed') or !$have_sysfs or error_die();
+
+foreach my $module (glob("${update}_*_{n,new}")) {
+	if (!$nounload && runval_raw('rmmod', $module) != 0) {
+		child_error();
+		error_die();
+	}
+}
+
+set_stage($kid, "cleanup") if ($have_sysfs);
+if ($have_usleep) {
+	my $count = 0;
+	while (update_loaded($kid) && $count < 5) {
+		Time::HiRes::usleep(100000);
+		$count++;
+	}
+} else {
+	sleep(1) if (!update_loaded($kid));
+}
+if (-e "/sys/module/$update") {
+	if (!$nounload && runval_raw('rmmod', $update) != 0) {
+		child_error();
+		error_die();
+	}
+}
+
+rmtree("/var/run/ksplice/updates/$kid") if (-e "/var/run/ksplice/updates/$kid");
+
+exit(0);
+
+sub error_die {
+	if (!update_loaded($kid)) {
+		die("Error undoing Ksplice update $kid\n");
+	}
+	print STDERR "Error undoing Ksplice update $kid:\n" unless $raw_errors;
+	print_error($kid);
+	if($debugon) {
+		my $debugfile = get_debug_output($kid, $debug);
+		print("Debugging output saved to $debugfile\n") if $debugfile;
+	}
+	exit(-1);
+}
+
+sub print_error {
+	my ($kid) = @_;
+	my %errors = (
+		"code_busy" => <<'END',
+Ksplice has aborted the undo operation because it appears that the code that
+you are trying to change is continuously in use by the system.  More
+specifically, Ksplice has been unable to find a moment when one or more of the
+to-be-changed functions is not on a thread's kernel stack.
+END
+		"module_busy" => <<'END',
+Ksplice has aborted the undo operation because it appears that the Ksplice
+update that you are trying to unload is in use by another module.  You can find
+out what module is using the Ksplice update using the lsmod command.
+END
+		"unexpected_running_task" => <<'END',
+Ksplice has aborted the undo operation because of an unexpected failure during
+the kernel stack check.  Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+		"out_of_memory" => <<'END',
+Ksplice has aborted the undo operation because the kernel ran out of memory.
+END
+		"call_failed" => <<'END',
+Ksplice has aborted the undo operation at the request of a one of the
+pre-application hooks that were included as part of this Ksplice
+update.  This is likely the result of a bug in the patch used to
+generate this update.
+END
+		"cold_update_loaded" => <<'END',
+Ksplice has aborted the undo operation because the update was applied using the
+--partial option, and one of the modules that was changed by the update was loaded
+since the update was applied.  You must first unload that (cold patched) module
+before you can undo this update.
+END
+		"unexpected" => <<'END',
+Ksplice has aborted because of an unexpected error.
+Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+		"UNKNOWN" => <<'END',
+The Ksplice kernel component has returned an error code that this version of
+ksplice-undo does not understand.
+END
+		"ok" => <<'END',
+Ksplice has aborted the undo operation for unknown reasons.
+Please consider reporting a bug to PACKAGE_BUGREPORT.
+END
+);
+	print_abort_error($kid, %errors);
+}
+
+=head1 NAME
+
+ksplice-undo - Undo a Ksplice update that has been applied to the running kernel
+
+=head1 SYNOPSIS
+
+B<ksplice-undo> [I<OPTIONS>] I<KSPLICE_ID>
+
+=head1 DESCRIPTION
+
+B<ksplice-undo> takes as input a Ksplice identification tag, as reported by
+L<ksplice-view(8)>, and it reverses that update within the running binary kernel.
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--debug>
+
+Reverses the update with debugging output enabled.  Recommended only for
+debugging.
+
+=item B<--debugfile=>I<filename>
+
+Sets the location where debugging output should be saved.  Implies --debug.
+
+=item B<--raw-errors>
+
+Print only raw error information designed to be machine-readable on
+standard error (standard output is still intended to be
+human-readable).  If B<ksplice-undo> fails due to an error from the
+Ksplice kernel modules, the first line on standard error will be a
+Ksplice B<abort code> (see the Ksplice source code for documentation
+on these codes).  Further lines will vary depending on the abort code.
+If B<ksplice-undo> fails for any other reason, it will output the line
+C<"OTHER\n">, followed by a human-readable failure message, to
+standard error.
+
+=back
+
+=head1 SEE ALSO
+
+L<ksplice-create(8)>, L<ksplice-apply(8)>, L<ksplice-view(8)>
+
+=head1 BUGS
+
+Please report bugs to <PACKAGE_BUGREPORT>.
+
+=head1 AUTHORS
+
+Jeff Arnold, Anders Kaseorg, and Tim Abbott
+
+=head1 COPYRIGHT
+
+Copyright (C) 2007-2009  Ksplice, Inc.
+
+This is free software and documentation.  You can redistribute and/or modify it
+under the terms of the GNU General Public License, version 2.
+
+=cut
