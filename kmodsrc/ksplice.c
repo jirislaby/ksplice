@@ -33,6 +33,7 @@
 #include <linux/kobject.h>
 #include <linux/kthread.h>
 #include <linux/pagemap.h>
+#include <linux/slab.h>
 #include <linux/sched.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 #include <linux/sort.h>
