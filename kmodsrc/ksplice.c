@@ -1064,9 +1064,9 @@ static abort_t apply_update(struct update *update)
 					goto out;
 				continue;
 			}
-			retval = use_module(change->new_code_mod,
+			retval = ref_module(change->new_code_mod,
 					    change->target);
-			if (retval != 1) {
+			if (retval) {
 				ret = UNEXPECTED;
 				goto out;
 			}
@@ -1648,7 +1648,7 @@ static abort_t add_dependency_on_address(struct ksplice_mod_change *change,
 		if (m == c->new_code_mod)
 			return OK;
 	}
-	if (use_module(change->new_code_mod, m) != 1)
+	if (ref_module(change->new_code_mod, m))
 		return MODULE_BUSY;
 	return OK;
 }
