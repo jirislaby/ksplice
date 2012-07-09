@@ -156,10 +156,10 @@ struct ksplice_system_map {
 #define KSPLICE_NEED_PARAINSTRUCTIONS 1
 #endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
 
-#define _PASTE(x, y) x##y
-#define PASTE(x, y) _PASTE(x, y)
-#define KSPLICE_UNIQ(s) PASTE(s##_, KSPLICE_MID)
-#define KSPLICE_KID_UNIQ(s) PASTE(s##_, KSPLICE_KID)
+#define _KS_PASTE(x, y) x##y
+#define KS_PASTE(x, y) _KS_PASTE(x, y)
+#define KSPLICE_UNIQ(s) KS_PASTE(s##_, KSPLICE_MID)
+#define KSPLICE_KID_UNIQ(s) KS_PASTE(s##_, KSPLICE_KID)
 #ifdef KSPLICE_STANDALONE
 #define init_ksplice_mod_change KSPLICE_KID_UNIQ(init_ksplice_mod_change)
 #define cleanup_ksplice_mod_change KSPLICE_KID_UNIQ(cleanup_ksplice_mod_change)

@@ -68,7 +68,7 @@
 #endif
 
 #define EXTRACT_SYMBOL(sym)						\
-	static const typeof(&sym) PASTE(__ksplice_extract_, __LINE__)	\
+	static const typeof(&sym) KS_PASTE(__ksplice_extract_, __LINE__)	\
 	    __used __attribute__((section(".ksplice_extract"))) = &sym
 #endif /* KSPLICE_STANDALONE */
 
