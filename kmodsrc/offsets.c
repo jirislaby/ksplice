@@ -66,17 +66,15 @@ const struct table_section table_sections[]
 	{
 		.sect = ".altinstructions",
 		.entry_size = sizeof(struct alt_instr),
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
-		.entry_contents_size = offsetof(struct alt_instr, pad1),
-#else
-/* 1d8a1f6b51f6b195dfdcf05821be97edede5664a was after 2.6.24 */
-		.entry_contents_size = offsetof(struct alt_instr, pad),
-#endif
+		.entry_contents_size = FIELD_ENDOF(struct alt_instr,
+				replacementlen),
 		.entry_align = __alignof__(struct alt_instr),
 		.has_addr = 1,
-		.addr_offset = offsetof(struct alt_instr, instr),
+		.relative_addr = 1,
+		.addr_offset = offsetof(struct alt_instr, instr_offset),
+		.relative_other = 1,
 		.other_sect = ".altinstr_replacement",
-		.other_offset = offsetof(struct alt_instr, replacement),
+		.other_offset = offsetof(struct alt_instr, repl_offset),
 	},
 #endif /* CONFIG_X86 */
 #if defined CONFIG_GENERIC_BUG && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
