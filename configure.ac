@@ -1,6 +1,10 @@
 AC_INIT([Ksplice], [0.9.9.1], [devel@ksplice.com])
 AC_SUBST([KSPLICE_API_VERSION], [2])
 
+# needed for bfd and iberty
+AC_CHECK_LIB([dl], [dlopen])
+AC_CHECK_LIB([z], [deflate])
+
 AC_ARG_WITH([libbfd],
   [  --with-libbfd=FILE      path to libbfd.a],
   [ac_libbfd=$withval],
