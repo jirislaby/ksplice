@@ -16,35 +16,21 @@
  */
 
 #include <generated/compile.h>
+#include <generated/utsrelease.h>
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/module.h>
+#include <linux/tracepoint.h>
 #include <linux/uts.h>
 #include <linux/utsname.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18)
-/* 63104eec234bdecb55fd9c15467ae00d0a3f42ac was after 2.6.17 */
-#include <generated/utsrelease.h>
-#endif /* LINUX_VERSION_CODE */
-
 #ifdef CONFIG_PARAVIRT
 #include <asm/paravirt.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)
-/* 98de032b681d8a7532d44dfc66aa5c0c1c755a9d was after 2.6.21 */
-#define paravirt_patch_site paravirt_patch
-#endif /* LINUX_VERSION_CODE */
 #endif /* CONFIG_PARAVIRT */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
-/* 97e1c18e8d17bd87e1e383b2e9d9fc740332c8e2 was after 2.6.27 */
-#include <linux/tracepoint.h>
-#endif /* LINUX_VERSION_CODE */
-
 #include <asm/uaccess.h>
 #include "offsets.h"
 
 const struct ksplice_config config
     __attribute__((section(".ksplice_config"))) = {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
-/* eb8f689046b857874e964463619f09df06d59fad was after 2.6.24 */
 /* Introduction of .cpuinit, .devinit, .meminit sections */
 #ifndef CONFIG_HOTPLUG
 	.ignore_devinit = 1,
@@ -55,7 +41,6 @@ const struct ksplice_config config
 #ifndef CONFIG_MEMORY_HOTPLUG
 	.ignore_meminit = 1,
 #endif /* !CONFIG_MEMORY_HOTPLUG */
-#endif /* LINUX_VERSION_CODE */
 };
 
 #define FIELD_ENDOF(t, f) (offsetof(t, f) + FIELD_SIZEOF(t, f))
@@ -77,7 +62,7 @@ const struct table_section table_sections[]
 		.other_offset = offsetof(struct alt_instr, repl_offset),
 	},
 #endif /* CONFIG_X86 */
-#if defined CONFIG_GENERIC_BUG && LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
+#ifdef CONFIG_GENERIC_BUG
 	{
 		.sect = "__bug_table",
 		.entry_size = sizeof(struct bug_entry),
@@ -93,9 +78,7 @@ const struct table_section table_sections[]
 		.addr_offset = offsetof(struct bug_entry, bug_addr),
 #endif
 	},
-#else /* !CONFIG_GENERIC_BUG || LINUX_VERSION_CODE < */
-/* 91768d6c2bad0d2766a166f13f2f57e197de3458 was after 2.6.19 */
-#endif /* CONFIG_GENERIC_BUG && LINUX_VERSION_CODE */
+#endif /* CONFIG_GENERIC_BUG */
 	{
 		.sect = "__ex_table",
 		.entry_size = sizeof(struct exception_table_entry),
@@ -105,8 +88,6 @@ const struct table_section table_sections[]
 		.other_sect = ".fixup",
 		.other_offset = offsetof(struct exception_table_entry, fixup),
 	},
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
-/* 97e1c18e8d17bd87e1e383b2e9d9fc740332c8e2 was after 2.6.27 */
 	{
 		.sect = "__tracepoints",
 		.entry_size = sizeof(struct tracepoint),
@@ -114,7 +95,6 @@ const struct table_section table_sections[]
 		.other_sect = "__tracepoints_strings",
 		.other_offset = offsetof(struct tracepoint, name),
 	},
-#endif /* LINUX_VERSION_CODE */
 #ifdef CONFIG_PARAVIRT
 	{
 		.sect = ".parainstructions",
@@ -154,7 +134,7 @@ const struct table_section table_sections[]
 		.crc_sect = "__kcrctab_gpl",
 #endif /* CONFIG_MODVERSIONS */
 	},
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18) && defined(CONFIG_UNUSED_SYMBOLS)
+#ifdef CONFIG_UNUSED_SYMBOLS
 /* f71d20e961474dde77e6558396efb93d6ac80a4b was after 2.6.17 */
 	{
 		.sect = "__ksymtab_unused_gpl",
@@ -176,9 +156,7 @@ const struct table_section table_sections[]
 		.crc_sect = "__kcrctab_unused",
 #endif /* CONFIG_MODVERSIONS */
 	},
-#endif /* LINUX_VERSION_CODE */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,17)
-/* 9f28bb7e1d0188a993403ab39b774785892805e1 was after 2.6.16 */
+#endif /* CONFIG_UNUSED_SYMBOLS */
 	{
 		.sect = "__ksymtab_gpl_future",
 		.entry_size = sizeof(struct kernel_symbol),
@@ -189,7 +167,6 @@ const struct table_section table_sections[]
 		.crc_sect = "__kcrctab_gpl_future",
 #endif /* CONFIG_MODVERSIONS */
 	},
-#endif /* LINUX_VERSION_CODE */
 };
 
 const char *__attribute__((section(".uts_sysname"))) sysname = UTS_SYSNAME;

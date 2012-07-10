@@ -138,24 +138,6 @@ struct ksplice_system_map {
 #include <linux/stringify.h>
 #include <linux/version.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-/* 6e21828743247270d09a86756a0c11702500dbfb was after 2.6.18 */
-#define bool _Bool
-#define false 0
-#define true 1
-#endif /* LINUX_VERSION_CODE */
-
-#if defined(CONFIG_PARAVIRT) && defined(CONFIG_X86_64) &&	\
-    LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25) &&		\
-    LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)
-/* Linux 2.6.25 and 2.6.26 apply paravirt replacements to the core
- * kernel but not modules on x86-64.  If we are patching the core
- * kernel, we need to apply the same replacements to our update
- * modules in order for run-pre matching to succeed.
- */
-#define KSPLICE_NEED_PARAINSTRUCTIONS 1
-#endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
-
 #define _KS_PASTE(x, y) x##y
 #define KS_PASTE(x, y) _KS_PASTE(x, y)
 #define KSPLICE_UNIQ(s) KS_PASTE(s##_, KSPLICE_MID)
@@ -219,9 +201,6 @@ struct ksplice_code {
 	struct ksplice_reloc *relocs, *relocs_end;
 	struct ksplice_section *sections, *sections_end;
 	struct ksplice_symbol *symbols, *symbols_end;
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-	struct paravirt_patch_site *parainstructions, *parainstructions_end;
-#endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
 #ifdef KSPLICE_STANDALONE
 	struct ksplice_system_map *system_map, *system_map_end;
 #endif /* KSPLICE_STANDALONE */

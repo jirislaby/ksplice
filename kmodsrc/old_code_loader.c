@@ -24,9 +24,6 @@
 extern struct ksplice_reloc ksplice_relocs[], ksplice_relocs_end[];
 extern struct ksplice_section ksplice_sections[], ksplice_sections_end[];
 extern struct ksplice_symbol ksplice_symbols[], ksplice_symbols_end[];
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-extern struct paravirt_patch_site parainstructions[], parainstructions_end[];
-#endif
 #ifdef KSPLICE_STANDALONE
 extern struct ksplice_system_map ksplice_system_map[], ksplice_system_map_end[];
 #endif /* KSPLICE_STANDALONE */
@@ -42,10 +39,6 @@ static struct ksplice_code old_code = {
 	.sections_end = ksplice_sections_end,
 	.symbols = ksplice_symbols,
 	.symbols_end = ksplice_symbols_end,
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-	.parainstructions = parainstructions,
-	.parainstructions_end = parainstructions_end,
-#endif
 #ifdef KSPLICE_STANDALONE
 	.system_map = ksplice_system_map,
 	.system_map_end = ksplice_system_map_end,

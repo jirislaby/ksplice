@@ -17,17 +17,9 @@
 
 #include <linux/module.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
 #include <linux/bug.h>
-#else /* LINUX_VERSION_CODE */
-/* 7664c5a1da4711bb6383117f51b94c8dc8f3f1cd was after 2.6.19 */
-#endif /* LINUX_VERSION_CODE */
 #include <linux/ctype.h>
-#if defined CONFIG_DEBUG_FS || LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 #include <linux/debugfs.h>
-#else /* CONFIG_DEBUG_FS */
-/* a7a76cefc4b12bb6508afa4c77f11c2752cc365d was after 2.6.11 */
-#endif /* CONFIG_DEBUG_FS */
 #include <linux/errno.h>
 #include <linux/kallsyms.h>
 #include <linux/kobject.h>
@@ -35,29 +27,17 @@
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 #include <linux/sched.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,12)
 #include <linux/sort.h>
-#else /* LINUX_VERSION_CODE < */
-/* 8c63b6d337534a6b5fb111dc27d0850f535118c0 was after 2.6.11 */
-#endif /* LINUX_VERSION_CODE */
 #include <linux/stop_machine.h>
 #include <linux/sysfs.h>
 #include <linux/time.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18)
 #include <linux/uaccess.h>
-#else /* LINUX_VERSION_CODE < */
-/* linux/uaccess.h doesn't exist in kernels before 2.6.18 */
-#include <asm/uaccess.h>
-#endif /* LINUX_VERSION_CODE */
 #include <linux/vmalloc.h>
 #ifdef KSPLICE_STANDALONE
 #include "ksplice.h"
 #else /* !KSPLICE_STANDALONE */
 #include <linux/ksplice.h>
 #endif /* KSPLICE_STANDALONE */
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-#include <asm/alternative.h>
-#endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
 
 #ifdef KSPLICE_STANDALONE
 #if !defined(CONFIG_KSPLICE) && !defined(CONFIG_KSPLICE_MODULE)
@@ -90,14 +70,6 @@ enum run_pre_mode {
 };
 
 enum { NOVAL, TEMP, VAL };
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,9)
-/* 5d7b32de9935c65ca8285ac6ec2382afdbb5d479 was after 2.6.8 */
-#define __bitwise__
-#elif LINUX_VERSION_CODE < KERNEL_VERSION(2,6,15)
-/* af4ca457eaf2d6682059c18463eb106e2ce58198 was after 2.6.14 */
-#define __bitwise__ __bitwise
-#endif
 
 typedef int __bitwise__ abort_t;
 
@@ -155,19 +127,6 @@ struct conflict_addr {
 	struct list_head list;
 };
 
-#if defined(CONFIG_DEBUG_FS) && LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
-/* Old kernels don't have debugfs_create_blob */
-struct debugfs_blob_wrapper {
-	void *data;
-	unsigned long size;
-};
-#endif /* CONFIG_DEBUG_FS && LINUX_VERSION_CODE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,19)
-/* 930631edd4b1fe2781d9fe90edbe35d89dfc94cc was after 2.6.18 */
-#define DIV_ROUND_UP(n, d) (((n) + (d) - 1) / (d))
-#endif
-
 struct labelval {
 	struct list_head list;
 	struct ksplice_symbol *symbol;
@@ -200,47 +159,6 @@ struct ksplice_lookup {
 	abort_t ret;
 };
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* c6b37801911d7f4663c99cad8aa230bc934cea82 was after 2.6.29 */
-struct symsearch {
-	const struct kernel_symbol *start, *stop;
-	const unsigned long *crcs;
-	enum {
-		NOT_GPL_ONLY,
-		GPL_ONLY,
-		WILL_BE_GPL_ONLY,
-	} licence;
-	bool unused;
-};
-#endif /* LINUX_VERSION_CODE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
-/* c33fa9f5609e918824446ef9a75319d4a802f1f4 was after 2.6.25 */
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
-/* 2fff0a48416af891dce38fd425246e337831e0bb was after 2.6.19 */
-static bool virtual_address_mapped(unsigned long addr)
-{
-	char retval;
-	return probe_kernel_address(addr, retval) != -EFAULT;
-}
-#else /* LINUX_VERSION_CODE < */
-static bool virtual_address_mapped(unsigned long addr);
-#endif /* LINUX_VERSION_CODE */
-
-static long probe_kernel_read(void *dst, void *src, size_t size)
-{
-	if (size == 0)
-		return 0;
-	if (!virtual_address_mapped((unsigned long)src) ||
-	    !virtual_address_mapped((unsigned long)src + size - 1))
-		return -EFAULT;
-
-	memcpy(dst, src, size);
-	return 0;
-}
-#endif /* LINUX_VERSION_CODE */
-
 static LIST_HEAD(updates);
 #ifdef KSPLICE_STANDALONE
 #if defined(CONFIG_KSPLICE) || defined(CONFIG_KSPLICE_MODULE)
@@ -256,203 +174,6 @@ static struct kobject *ksplice_kobj;
 
 static struct kobj_type update_ktype;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,9)
-/* Old kernels do not have kcalloc
- * e629946abd0bb8266e9c3d0fd1bff2ef8dec5443 was after 2.6.8
- */
-static void *kcalloc(size_t n, size_t size, typeof(GFP_KERNEL) flags)
-{
-	char *mem;
-	if (n != 0 && size > ULONG_MAX / n)
-		return NULL;
-	mem = kmalloc(n * size, flags);
-	if (mem)
-		memset(mem, 0, n * size);
-	return mem;
-}
-#endif /* LINUX_VERSION_CODE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,12)
-/* 8c63b6d337534a6b5fb111dc27d0850f535118c0 was after 2.6.11 */
-static void u32_swap(void *a, void *b, int size)
-{
-	u32 t = *(u32 *)a;
-	*(u32 *)a = *(u32 *)b;
-	*(u32 *)b = t;
-}
-
-static void generic_swap(void *a, void *b, int size)
-{
-	char t;
-
-	do {
-		t = *(char *)a;
-		*(char *)a++ = *(char *)b;
-		*(char *)b++ = t;
-	} while (--size > 0);
-}
-
-/**
- * sort - sort an array of elements
- * @base: pointer to data to sort
- * @num: number of elements
- * @size: size of each element
- * @cmp: pointer to comparison function
- * @swap: pointer to swap function or NULL
- *
- * This function does a heapsort on the given array. You may provide a
- * swap function optimized to your element type.
- *
- * Sorting time is O(n log n) both on average and worst-case. While
- * qsort is about 20% faster on average, it suffers from exploitable
- * O(n*n) worst-case behavior and extra memory requirements that make
- * it less suitable for kernel use.
- */
-
-void sort(void *base, size_t num, size_t size,
-	  int (*cmp)(const void *, const void *),
-	  void (*swap)(void *, void *, int size))
-{
-	/* pre-scale counters for performance */
-	int i = (num / 2 - 1) * size, n = num * size, c, r;
-
-	if (!swap)
-		swap = (size == 4 ? u32_swap : generic_swap);
-
-	/* heapify */
-	for (; i >= 0; i -= size) {
-		for (r = i; r * 2 + size < n; r = c) {
-			c = r * 2 + size;
-			if (c < n - size && cmp(base + c, base + c + size) < 0)
-				c += size;
-			if (cmp(base + r, base + c) >= 0)
-				break;
-			swap(base + r, base + c, size);
-		}
-	}
-
-	/* sort */
-	for (i = n - size; i > 0; i -= size) {
-		swap(base, base + i, size);
-		for (r = 0; r * 2 + size < i; r = c) {
-			c = r * 2 + size;
-			if (c < i - size && cmp(base + c, base + c + size) < 0)
-				c += size;
-			if (cmp(base + r, base + c) >= 0)
-				break;
-			swap(base + r, base + c, size);
-		}
-	}
-}
-#endif /* LINUX_VERSION_CODE < */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,13)
-/* Old kernels do not have kstrdup
- * 543537bd922692bc978e2e356fcd8bfc9c2ee7d5 was after 2.6.12
- */
-#define kstrdup ksplice_kstrdup
-static char *kstrdup(const char *s, typeof(GFP_KERNEL) gfp)
-{
-	size_t len;
-	char *buf;
-
-	if (!s)
-		return NULL;
-
-	len = strlen(s) + 1;
-	buf = kmalloc(len, gfp);
-	if (buf)
-		memcpy(buf, s, len);
-	return buf;
-}
-#endif /* LINUX_VERSION_CODE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
-/* Old kernels use semaphore instead of mutex
- * 97d1f15b7ef52c1e9c28dc48b454024bb53a5fd2 was after 2.6.16
- */
-#define mutex semaphore
-#define mutex_lock down
-#define mutex_unlock up
-#endif /* LINUX_VERSION_CODE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)
-/* 11443ec7d9286dd25663516436a14edfb5f43857 was after 2.6.21 */
-static char * __attribute_used__
-kvasprintf(typeof(GFP_KERNEL) gfp, const char *fmt, va_list ap)
-{
-	unsigned int len;
-	char *p, dummy[1];
-	va_list aq;
-
-	va_copy(aq, ap);
-	len = vsnprintf(dummy, 0, fmt, aq);
-	va_end(aq);
-
-	p = kmalloc(len + 1, gfp);
-	if (!p)
-		return NULL;
-
-	vsnprintf(p, len + 1, fmt, ap);
-
-	return p;
-}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,18)
-/* e905914f96e11862b130dd229f73045dad9a34e8 was after 2.6.17 */
-static char * __attribute__((format (printf, 2, 3)))
-kasprintf(typeof(GFP_KERNEL) gfp, const char *fmt, ...)
-{
-	va_list ap;
-	char *p;
-
-	va_start(ap, fmt);
-	p = kvasprintf(gfp, fmt, ap);
-	va_end(ap);
-
-	return p;
-}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,25)
-/* 06b2a76d25d3cfbd14680021c1d356c91be6904e was after 2.6.24 */
-static int strict_strtoul(const char *cp, unsigned int base, unsigned long *res)
-{
-	char *tail;
-	unsigned long val;
-	size_t len;
-
-	*res = 0;
-	len = strlen(cp);
-	if (len == 0)
-		return -EINVAL;
-
-	val = simple_strtoul(cp, &tail, base);
-	if ((*tail == '\0') ||
-	    ((len == (size_t)(tail - cp) + 1) && (*tail == '\n'))) {
-		*res = val;
-		return 0;
-	}
-
-	return -EINVAL;
-}
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,27)
-/* 9b1a4d38373a5581a4e01032a3ccdd94cd93477b was after 2.6.26 */
-/* Assume cpus == NULL. */
-#define stop_machine(fn, data, cpus) stop_machine_run(fn, data, NR_CPUS);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22)
-/* ee527cd3a20c2aeaac17d939e5d011f7a76d69f5 was after 2.6.21 */
-EXTRACT_SYMBOL(stop_machine_run);
-#endif /* LINUX_VERSION_CODE */
-#endif /* LINUX_VERSION_CODE */
-
-#ifndef task_thread_info
-#define task_thread_info(task) (task)->thread_info
-#endif /* !task_thread_info */
-
 #ifdef KSPLICE_STANDALONE
 
 #ifdef do_each_thread_ve		/* OpenVZ kernels define this */
@@ -467,56 +188,6 @@ extern const struct ksplice_reloc ksplice_init_relocs[],
     ksplice_init_relocs_end[];
 
 #endif /* KSPLICE_STANDALONE */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* c6b37801911d7f4663c99cad8aa230bc934cea82 was after 2.6.29 */
-extern struct list_head modules;
-EXTRACT_SYMBOL(modules);
-extern struct mutex module_mutex;
-EXTRACT_SYMBOL(module_mutex);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18) && defined(CONFIG_UNUSED_SYMBOLS)
-/* f71d20e961474dde77e6558396efb93d6ac80a4b was after 2.6.17 */
-#define KSPLICE_KSYMTAB_UNUSED_SUPPORT 1
-#endif /* LINUX_VERSION_CODE */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,17)
-/* 9f28bb7e1d0188a993403ab39b774785892805e1 was after 2.6.16 */
-#define KSPLICE_KSYMTAB_FUTURE_SUPPORT 1
-#endif /* LINUX_VERSION_CODE */
-extern const struct kernel_symbol __start___ksymtab[];
-EXTRACT_SYMBOL(__start___ksymtab);
-extern const struct kernel_symbol __stop___ksymtab[];
-EXTRACT_SYMBOL(__stop___ksymtab);
-extern const unsigned long __start___kcrctab[];
-EXTRACT_SYMBOL(__start___kcrctab);
-extern const struct kernel_symbol __start___ksymtab_gpl[];
-EXTRACT_SYMBOL(__start___ksymtab_gpl);
-extern const struct kernel_symbol __stop___ksymtab_gpl[];
-EXTRACT_SYMBOL(__stop___ksymtab_gpl);
-extern const unsigned long __start___kcrctab_gpl[];
-EXTRACT_SYMBOL(__start___kcrctab_gpl);
-#ifdef KSPLICE_KSYMTAB_UNUSED_SUPPORT
-extern const struct kernel_symbol __start___ksymtab_unused[];
-EXTRACT_SYMBOL(__start___ksymtab_unused);
-extern const struct kernel_symbol __stop___ksymtab_unused[];
-EXTRACT_SYMBOL(__stop___ksymtab_unused);
-extern const unsigned long __start___kcrctab_unused[];
-EXTRACT_SYMBOL(__start___kcrctab_unused);
-extern const struct kernel_symbol __start___ksymtab_unused_gpl[];
-EXTRACT_SYMBOL(__start___ksymtab_unused_gpl);
-extern const struct kernel_symbol __stop___ksymtab_unused_gpl[];
-EXTRACT_SYMBOL(__stop___ksymtab_unused_gpl);
-extern const unsigned long __start___kcrctab_unused_gpl[];
-EXTRACT_SYMBOL(__start___kcrctab_unused_gpl);
-#endif /* KSPLICE_KSYMTAB_UNUSED_SUPPORT */
-#ifdef KSPLICE_KSYMTAB_FUTURE_SUPPORT
-extern const struct kernel_symbol __start___ksymtab_gpl_future[];
-EXTRACT_SYMBOL(__start___ksymtab_gpl_future);
-extern const struct kernel_symbol __stop___ksymtab_gpl_future[];
-EXTRACT_SYMBOL(__stop___ksymtab_gpl_future);
-extern const unsigned long __start___kcrctab_gpl_future[];
-EXTRACT_SYMBOL(__start___kcrctab_gpl_future);
-#endif /* KSPLICE_KSYMTAB_FUTURE_SUPPORT */
-#endif /* LINUX_VERSION_CODE */
 
 static struct update *init_ksplice_update(const char *kid);
 static void cleanup_ksplice_update(struct update *update);
@@ -616,15 +287,11 @@ static abort_t handle_howto_reloc(struct ksplice_mod_change *change,
 				  const struct ksplice_reloc *r,
 				  unsigned long run_addr,
 				  enum run_pre_mode mode);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
 #ifdef CONFIG_BUG
 static abort_t handle_bug(struct ksplice_mod_change *change,
 			  const struct ksplice_reloc *r,
 			  unsigned long run_addr);
 #endif /* CONFIG_BUG */
-#else /* LINUX_VERSION_CODE < */
-/* 7664c5a1da4711bb6383117f51b94c8dc8f3f1cd was after 2.6.19 */
-#endif /* LINUX_VERSION_CODE */
 static abort_t handle_extable(struct ksplice_mod_change *change,
 			      const struct ksplice_reloc *r,
 			      unsigned long run_addr);
@@ -712,10 +379,6 @@ static int contains_canary(struct ksplice_mod_change *change,
 static unsigned long follow_trampolines(struct ksplice_mod_change *change,
 					unsigned long addr);
 static bool patches_module(const struct module *a, const struct module *b);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* 66f92cf9d415e96a5bdd6c64de8dd8418595d2fc was after 2.6.29 */
-static bool strstarts(const char *str, const char *prefix);
-#endif /* LINUX_VERSION_CODE */
 static bool singular(struct list_head *list);
 static void *bsearch(const void *key, const void *base, size_t n,
 		     size_t size, int (*cmp)(const void *key, const void *elt));
@@ -729,37 +392,6 @@ static int __attribute__((format(printf, 2, 3)))
 _ksdebug(struct update *update, const char *fmt, ...);
 #define ksdebug(change, fmt, ...) \
 	_ksdebug(change->update, fmt, ## __VA_ARGS__)
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && defined(CONFIG_KALLSYMS)
-/* 75a66614db21007bcc8c37f9c5d5b922981387b9 was after 2.6.29 */
-static int kallsyms_on_each_symbol(int (*fn)(void *, const char *,
-					     struct module *, unsigned long),
-				   void *data);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-static unsigned int kallsyms_expand_symbol(unsigned int off, char *result);
-#endif /* LINUX_VERSION_CODE */
-static int module_kallsyms_on_each_symbol(int (*fn)(void *, const char *,
-						    struct module *,
-						    unsigned long),
-					  void *data);
-#endif /* LINUX_VERSION_CODE && CONFIG_KALLSYMS */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* c6b37801911d7f4663c99cad8aa230bc934cea82 was after 2.6.29 */
-static struct module *find_module(const char *name);
-static int use_module(struct module *a, struct module *b);
-static const struct kernel_symbol *find_symbol(const char *name,
-					       struct module **owner,
-					       const unsigned long **crc,
-					       bool gplok, bool warn);
-static bool each_symbol(bool (*fn)(const struct symsearch *arr,
-				   struct module *owner,
-				   unsigned int symnum, void *data),
-			void *data);
-static struct module *__module_address(unsigned long addr);
-#endif /* LINUX_VERSION_CODE */
-
-/* Architecture-specific functions defined in arch/ARCH/kernel/ksplice-arch.c */
 
 /* Prepare a trampoline for the given patch */
 static abort_t prepare_trampoline(struct ksplice_mod_change *change,
@@ -980,12 +612,7 @@ static void cleanup_ksplice_update(struct update *update)
 static void maybe_cleanup_ksplice_update(struct update *update)
 {
 	if (list_empty(&update->changes) && list_empty(&update->unused_changes))
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
 		kobject_put(&update->kobj);
-#else /* LINUX_VERSION_CODE < */
-/* 6d06adfaf82d154023141ddc0c9de18b6a49090b was after 2.6.24 */
-		kobject_unregister(&update->kobj);
-#endif /* LINUX_VERSION_CODE */
 }
 
 static void add_to_update(struct ksplice_mod_change *change,
@@ -999,7 +626,6 @@ static int ksplice_sysfs_init(struct update *update)
 {
 	int ret = 0;
 	memset(&update->kobj, 0, sizeof(update->kobj));
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
 #ifndef KSPLICE_STANDALONE
 	ret = kobject_init_and_add(&update->kobj, &update_ktype,
 				   ksplice_kobj, "%s", update->kid);
@@ -1007,35 +633,11 @@ static int ksplice_sysfs_init(struct update *update)
 	ret = kobject_init_and_add(&update->kobj, &update_ktype,
 				   &THIS_MODULE->mkobj.kobj, "ksplice");
 #endif /* KSPLICE_STANDALONE */
-#else /* LINUX_VERSION_CODE < */
-/* 6d06adfaf82d154023141ddc0c9de18b6a49090b was after 2.6.24 */
-	ret = kobject_set_name(&update->kobj, "%s", "ksplice");
 	if (ret != 0)
 		return ret;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,11)
-	update->kobj.parent = &THIS_MODULE->mkobj.kobj;
-#else /* LINUX_VERSION_CODE < */
-/* b86ab02803095190d6b72bcc18dcf620bf378df9 was after 2.6.10 */
-	update->kobj.parent = &THIS_MODULE->mkobj->kobj;
-#endif /* LINUX_VERSION_CODE */
-	update->kobj.ktype = &update_ktype;
-	ret = kobject_register(&update->kobj);
-#endif /* LINUX_VERSION_CODE */
-	if (ret != 0)
-		return ret;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,15)
 	kobject_uevent(&update->kobj, KOBJ_ADD);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-/* 312c004d36ce6c739512bac83b452f4c20ab1f62 was after 2.6.14 */
-/* 12025235884570ba7f02a6f427f973ac6be7ec54 was after 2.6.9 */
-	kobject_uevent(&update->kobj, KOBJ_ADD, NULL);
-#endif /* LINUX_VERSION_CODE */
 	return 0;
 }
-
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-EXTRACT_SYMBOL(apply_paravirt);
-#endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
 
 static abort_t apply_update(struct update *update)
 {
@@ -1077,15 +679,6 @@ static abort_t apply_update(struct update *update)
 			goto out;
 		list_del(&change->list);
 		list_add_tail(&change->list, &update->changes);
-
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-		if (change->target == NULL) {
-			apply_paravirt(change->new_code.parainstructions,
-				       change->new_code.parainstructions_end);
-			apply_paravirt(change->old_code.parainstructions,
-				       change->old_code.parainstructions_end);
-		}
-#endif /* KSPLICE_NEED_PARAINSTRUCTIONS */
 	}
 
 	list_for_each_entry(change, &update->changes, list) {
@@ -1582,11 +1175,6 @@ static void unmap_trampoline_pages(struct update *update)
 	}
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,22) && defined(CONFIG_X86_64)
-/* e3ebadd95cb621e2c7436f3d3646447ac9d5c16d was after 2.6.21 */
-#define phys_base ({EXTRACT_SYMBOL(phys_base); phys_base;})
-#endif /* LINUX_VERSION_CODE && CONFIG_X86_64 */
-
 /*
  * map_writable creates a shadow page mapping of the range
  * [addr, addr + len) so that we can write to code mapped read-only.
@@ -1609,16 +1197,7 @@ static void *map_writable(void *addr, size_t len)
 
 	for (i = 0; i < nr_pages; i++) {
 		if (__module_address((unsigned long)page_addr) == NULL) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,22) || !defined(CONFIG_X86_64)
 			pages[i] = virt_to_page(page_addr);
-#else /* LINUX_VERSION_CODE < && CONFIG_X86_64 */
-/* e3ebadd95cb621e2c7436f3d3646447ac9d5c16d was after 2.6.21
- * This works around a broken virt_to_page() from the RHEL 5 backport
- * of x86-64 relocatable kernel support.
- */
-			pages[i] =
-			    pfn_to_page(__pa_symbol(page_addr) >> PAGE_SHIFT);
-#endif /* LINUX_VERSION_CODE || !CONFIG_X86_64 */
 			WARN_ON(!PageReserved(pages[i]));
 		} else {
 			pages[i] = vmalloc_to_page(addr);
@@ -1635,11 +1214,6 @@ static void *map_writable(void *addr, size_t len)
 		return NULL;
 	return vaddr + offset_in_page(addr);
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* c6b37801911d7f4663c99cad8aa230bc934cea82 was after 2.6.29 */
-EXTRACT_SYMBOL(__module_text_address);
-#endif /* LINUX_VERSION_CODE */
 
 /*
  * Ksplice adds a dependency on any symbol address used to resolve
@@ -1943,10 +1517,6 @@ static void __attribute__((noreturn)) ksplice_deleted(void)
 {
 	printk(KERN_CRIT "Called a kernel function deleted by Ksplice!\n");
 	BUG();
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-/* 91768d6c2bad0d2766a166f13f2f57e197de3458 was after 2.6.19 */
-	for (;;);
-#endif
 }
 
 /* Floodfill to run-pre match the sections within a change. */
@@ -2357,10 +1927,7 @@ static abort_t brute_search(struct ksplice_mod_change *change,
 
 extern struct list_head modules;
 EXTRACT_SYMBOL(modules);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,25)
-/* 3abf024d2abb79614d8c4cb25a70d5596f77d0ad was after 2.6.24 */
 EXTRACT_SYMBOL(init_mm);
-#endif /* LINUX_VERSION_CODE */
 
 static abort_t brute_search_all(struct ksplice_mod_change *change,
 				struct ksplice_section *sect,
@@ -2510,14 +2077,10 @@ static abort_t handle_reloc(struct ksplice_mod_change *change,
 	case KSPLICE_HOWTO_DATE:
 	case KSPLICE_HOWTO_TIME:
 		return handle_howto_date(change, sect, r, run_addr, mode);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,20)
 #ifdef CONFIG_BUG
 	case KSPLICE_HOWTO_BUG:
 		return handle_bug(change, r, run_addr);
 #endif /* CONFIG_BUG */
-#else /* LINUX_VERSION_CODE < */
-/* 7664c5a1da4711bb6383117f51b94c8dc8f3f1cd was after 2.6.19 */
-#endif /* LINUX_VERSION_CODE */
 	case KSPLICE_HOWTO_EXTABLE:
 		return handle_extable(change, r, run_addr);
 	case KSPLICE_HOWTO_SYMBOL:
@@ -3141,11 +2704,6 @@ static int __reverse_patches(void *updateptr)
 	return (__force int)OK;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)
-/* 5d4564e68210e4b1edb3f013bc3e59982bb35737 was after 2.6.10 */
-EXTRACT_SYMBOL(tasklist_lock);
-#endif /* LINUX_VERSION_CODE */
-
 /*
  * Check whether any thread's instruction pointer or any address of
  * its stack is contained in one of the safety_records associated with
@@ -3159,10 +2717,6 @@ static abort_t check_each_task(struct update *update)
 {
 	const struct task_struct *g, *p;
 	abort_t status = OK, ret;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)
-/* 5d4564e68210e4b1edb3f013bc3e59982bb35737 was after 2.6.10 */
-	read_lock(&tasklist_lock);
-#endif /* LINUX_VERSION_CODE */
 	do_each_thread(g, p) {
 		/* do_each_thread is a double loop! */
 		ret = check_task(update, p, false);
@@ -3171,18 +2725,8 @@ static abort_t check_each_task(struct update *update)
 			status = ret;
 		}
 		if (ret != OK && ret != CODE_BUSY)
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)
-/* 5d4564e68210e4b1edb3f013bc3e59982bb35737 was after 2.6.10 */
-			goto out;
-#else /* LINUX_VERSION_CODE < */
 			return ret;
-#endif /* LINUX_VERSION_CODE */
 	} while_each_thread(g, p);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11)
-/* 5d4564e68210e4b1edb3f013bc3e59982bb35737 was after 2.6.10 */
-out:
-	read_unlock(&tasklist_lock);
-#endif /* LINUX_VERSION_CODE */
 	return status;
 }
 
@@ -3210,12 +2754,7 @@ static abort_t check_task(struct update *update,
 		list_add(&conf->list, &update->conflicts);
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,19)
 	if (t->state == TASK_DEAD)
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-/* c394cc9fbb367f87faa2228ec2eabacd2d4701c6 was after 2.6.18 */
-	if ((t->flags & PF_DEAD) != 0)
-#endif
 		return OK;
 
 	if (KSPLICE_CHECK_IP)
@@ -3306,24 +2845,16 @@ static abort_t check_record(struct conflict_addr *ca,
 /* Is the task one of the stop_machine tasks? */
 static bool is_stop_machine(const struct task_struct *t)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,27)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,35)
 	const char *kstop_prefix = "migration/";
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
+#else
 	const char *kstop_prefix = "kstop/";
-#else /* LINUX_VERSION_CODE < */
-/* c9583e55fa2b08a230c549bd1e3c0bde6c50d9cc was after 2.6.27 */
-	const char *kstop_prefix = "kstop";
 #endif /* LINUX_VERSION_CODE */
 	const char *num;
 	if (!strstarts(t->comm, kstop_prefix))
 		return false;
 	num = t->comm + strlen(kstop_prefix);
 	return num[strspn(num, "0123456789")] == '\0';
-#else /* LINUX_VERSION_CODE < */
-/* ffdb5976c47609c862917d4c186ecbb5706d2dda was after 2.6.26 */
-	return strcmp(t->comm, "kstopmachine") == 0;
-#endif /* LINUX_VERSION_CODE */
 }
 
 static void cleanup_conflicts(struct update *update)
@@ -3573,13 +3104,7 @@ static bool patches_module(const struct module *a, const struct module *b)
 		return false;
 	name++;
 	return strstarts(name, modname) &&
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
 	    strcmp(name + strlen(modname), "_new") == 0;
-#else /* LINUX_VERSION_CODE < */
-/* 0e8a2de644a93132594f66222a9d48405674eacd was after 2.6.9 */
-	    (strcmp(name + strlen(modname), "_n") == 0
-	     || strcmp(name + strlen(modname), "_new") == 0);
-#endif /* LINUX_VERSION_CODE */
 #else /* !KSPLICE_NO_KERNEL_SUPPORT */
 	struct ksplice_module_list_entry *entry;
 	if (a == b)
@@ -3592,14 +3117,6 @@ static bool patches_module(const struct module *a, const struct module *b)
 	return false;
 #endif /* KSPLICE_NO_KERNEL_SUPPORT */
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* 66f92cf9d415e96a5bdd6c64de8dd8418595d2fc was after 2.6.29 */
-static bool strstarts(const char *str, const char *prefix)
-{
-	return strncmp(str, prefix, strlen(prefix)) == 0;
-}
-#endif /* LINUX_VERSION_CODE */
 
 static bool singular(struct list_head *list)
 {
@@ -3645,36 +3162,6 @@ static int compare_system_map(const void *a, const void *b)
 #endif /* KSPLICE_STANDALONE */
 
 #ifdef CONFIG_DEBUG_FS
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,17)
-/* Old kernels don't have debugfs_create_blob */
-static ssize_t read_file_blob(struct file *file, char __user *user_buf,
-			      size_t count, loff_t *ppos)
-{
-	struct debugfs_blob_wrapper *blob = file->private_data;
-	return simple_read_from_buffer(user_buf, count, ppos, blob->data,
-				       blob->size);
-}
-
-static int blob_open(struct inode *inode, struct file *file)
-{
-	if (inode->i_private)
-		file->private_data = inode->i_private;
-	return 0;
-}
-
-static struct file_operations fops_blob = {
-	.read = read_file_blob,
-	.open = blob_open,
-};
-
-static struct dentry *debugfs_create_blob(const char *name, mode_t mode,
-					  struct dentry *parent,
-					  struct debugfs_blob_wrapper *blob)
-{
-	return debugfs_create_file(name, mode, parent, blob, &fops_blob);
-}
-#endif /* LINUX_VERSION_CODE */
-
 static abort_t init_debug_buf(struct update *update)
 {
 	update->debug_blob.size = 0;
@@ -3751,16 +3238,7 @@ static int _ksdebug(struct update *update, const char *fmt, ...)
 		printk(KERN_DEBUG "ksplice: ");
 
 	va_start(args, fmt);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,9)
 	vprintk(fmt, args);
-#else /* LINUX_VERSION_CODE < */
-/* 683b229286b429244f35726b3c18caec429233bd was after 2.6.8 */
-	{
-		char *buf = kvasprintf(GFP_KERNEL, fmt, args);
-		printk("%s", buf);
-		kfree(buf);
-	}
-#endif /* LINUX_VERSION_CODE */
 	va_end(args);
 
 	update->debug_continue_line =
@@ -3768,382 +3246,6 @@ static int _ksdebug(struct update *update, const char *fmt, ...)
 	return 0;
 }
 #endif /* CONFIG_DEBUG_FS */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30) && defined(CONFIG_KALLSYMS)
-/* 75a66614db21007bcc8c37f9c5d5b922981387b9 was after 2.6.29 */
-extern unsigned long kallsyms_addresses[];
-EXTRACT_SYMBOL(kallsyms_addresses);
-extern unsigned long kallsyms_num_syms;
-EXTRACT_SYMBOL(kallsyms_num_syms);
-extern u8 kallsyms_names[];
-EXTRACT_SYMBOL(kallsyms_names);
-
-static int kallsyms_on_each_symbol(int (*fn)(void *, const char *,
-					     struct module *, unsigned long),
-				   void *data)
-{
-	char namebuf[KSYM_NAME_LEN];
-	unsigned long i;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-	unsigned int off;
-#endif /* LINUX_VERSION_CODE */
-	int ret;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-	for (i = 0, off = 0; i < kallsyms_num_syms; i++) {
-		off = kallsyms_expand_symbol(off, namebuf);
-		ret = fn(data, namebuf, NULL, kallsyms_addresses[i]);
-		if (ret != 0)
-			return ret;
-	}
-#else /* LINUX_VERSION_CODE < */
-/* 5648d78927ca65e74aadc88a2b1d6431e55e78ec was after 2.6.9 */
-	char *knames;
-
-	for (i = 0, knames = kallsyms_names; i < kallsyms_num_syms; i++) {
-		unsigned prefix = *knames++;
-
-		strlcpy(namebuf + prefix, knames, KSYM_NAME_LEN - prefix);
-
-		ret = fn(data, namebuf, NULL, kallsyms_addresses[i]);
-		if (ret != OK)
-			return ret;
-
-		knames += strlen(knames) + 1;
-	}
-#endif /* LINUX_VERSION_CODE */
-	return module_kallsyms_on_each_symbol(fn, data);
-}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,10)
-extern u8 kallsyms_token_table[];
-EXTRACT_SYMBOL(kallsyms_token_table);
-extern u16 kallsyms_token_index[];
-EXTRACT_SYMBOL(kallsyms_token_index);
-
-static unsigned int kallsyms_expand_symbol(unsigned int off, char *result)
-{
-	long len, skipped_first = 0;
-	const u8 *tptr, *data;
-
-	data = &kallsyms_names[off];
-	len = *data;
-	data++;
-
-	off += len + 1;
-
-	while (len) {
-		tptr = &kallsyms_token_table[kallsyms_token_index[*data]];
-		data++;
-		len--;
-
-		while (*tptr) {
-			if (skipped_first) {
-				*result = *tptr;
-				result++;
-			} else
-				skipped_first = 1;
-			tptr++;
-		}
-	}
-
-	*result = '\0';
-
-	return off;
-}
-#else /* LINUX_VERSION_CODE < */
-/* 5648d78927ca65e74aadc88a2b1d6431e55e78ec was after 2.6.9 */
-#endif /* LINUX_VERSION_CODE */
-
-static int module_kallsyms_on_each_symbol(int (*fn)(void *, const char *,
-						    struct module *,
-						    unsigned long),
-					  void *data)
-{
-	struct module *mod;
-	unsigned int i;
-	int ret;
-
-	list_for_each_entry(mod, &modules, list) {
-		for (i = 0; i < mod->num_symtab; i++) {
-			ret = fn(data, mod->strtab + mod->symtab[i].st_name,
-				 mod, mod->symtab[i].st_value);
-			if (ret != 0)
-				return ret;
-		}
-	}
-	return 0;
-}
-#endif /* LINUX_VERSION_CODE && CONFIG_KALLSYMS */
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,30)
-/* c6b37801911d7f4663c99cad8aa230bc934cea82 was after 2.6.29 */
-static struct module *find_module(const char *name)
-{
-	struct module *mod;
-
-	list_for_each_entry(mod, &modules, list) {
-		if (strcmp(mod->name, name) == 0)
-			return mod;
-	}
-	return NULL;
-}
-
-#ifdef CONFIG_MODULE_UNLOAD
-struct module_use {
-	struct list_head list;
-	struct module *module_which_uses;
-};
-
-/* I'm not yet certain whether we need the strong form of this. */
-static inline int strong_try_module_get(struct module *mod)
-{
-	if (mod && mod->state != MODULE_STATE_LIVE)
-		return -EBUSY;
-	if (try_module_get(mod))
-		return 0;
-	return -ENOENT;
-}
-
-/* Does a already use b? */
-static int already_uses(struct module *a, struct module *b)
-{
-	struct module_use *use;
-	list_for_each_entry(use, &b->modules_which_use_me, list) {
-		if (use->module_which_uses == a)
-			return 1;
-	}
-	return 0;
-}
-
-/* Make it so module a uses b.  Must be holding module_mutex */
-static int use_module(struct module *a, struct module *b)
-{
-	struct module_use *use;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,21)
-/* 270a6c4cad809e92d7b81adde92d0b3d94eeb8ee was after 2.6.20 */
-	int no_warn;
-#endif /* LINUX_VERSION_CODE */
-	if (b == NULL || already_uses(a, b))
-		return 1;
-
-	if (strong_try_module_get(b) < 0)
-		return 0;
-
-	use = kmalloc(sizeof(*use), GFP_ATOMIC);
-	if (!use) {
-		module_put(b);
-		return 0;
-	}
-	use->module_which_uses = a;
-	list_add(&use->list, &b->modules_which_use_me);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,21)
-/* 270a6c4cad809e92d7b81adde92d0b3d94eeb8ee was after 2.6.20 */
-	no_warn = sysfs_create_link(b->holders_dir, &a->mkobj.kobj, a->name);
-#endif /* LINUX_VERSION_CODE */
-	return 1;
-}
-#else /* CONFIG_MODULE_UNLOAD */
-static int use_module(struct module *a, struct module *b)
-{
-	return 1;
-}
-#endif /* CONFIG_MODULE_UNLOAD */
-
-#ifndef CONFIG_MODVERSIONS
-#define symversion(base, idx) NULL
-#else
-#define symversion(base, idx) ((base != NULL) ? ((base) + (idx)) : NULL)
-#endif
-
-static bool each_symbol_in_section(const struct symsearch *arr,
-				   unsigned int arrsize,
-				   struct module *owner,
-				   bool (*fn)(const struct symsearch *syms,
-					      struct module *owner,
-					      unsigned int symnum, void *data),
-				   void *data)
-{
-	unsigned int i, j;
-
-	for (j = 0; j < arrsize; j++) {
-		for (i = 0; i < arr[j].stop - arr[j].start; i++)
-			if (fn(&arr[j], owner, i, data))
-				return true;
-	}
-
-	return false;
-}
-
-/* Returns true as soon as fn returns true, otherwise false. */
-static bool each_symbol(bool (*fn)(const struct symsearch *arr,
-				   struct module *owner,
-				   unsigned int symnum, void *data),
-			void *data)
-{
-	struct module *mod;
-	const struct symsearch arr[] = {
-		{ __start___ksymtab, __stop___ksymtab, __start___kcrctab,
-		  NOT_GPL_ONLY, false },
-		{ __start___ksymtab_gpl, __stop___ksymtab_gpl,
-		  __start___kcrctab_gpl,
-		  GPL_ONLY, false },
-#ifdef KSPLICE_KSYMTAB_FUTURE_SUPPORT
-		{ __start___ksymtab_gpl_future, __stop___ksymtab_gpl_future,
-		  __start___kcrctab_gpl_future,
-		  WILL_BE_GPL_ONLY, false },
-#endif /* KSPLICE_KSYMTAB_FUTURE_SUPPORT */
-#ifdef KSPLICE_KSYMTAB_UNUSED_SUPPORT
-		{ __start___ksymtab_unused, __stop___ksymtab_unused,
-		  __start___kcrctab_unused,
-		  NOT_GPL_ONLY, true },
-		{ __start___ksymtab_unused_gpl, __stop___ksymtab_unused_gpl,
-		  __start___kcrctab_unused_gpl,
-		  GPL_ONLY, true },
-#endif /* KSPLICE_KSYMTAB_UNUSED_SUPPORT */
-	};
-
-	if (each_symbol_in_section(arr, ARRAY_SIZE(arr), NULL, fn, data))
-		return 1;
-
-	list_for_each_entry(mod, &modules, list) {
-		struct symsearch module_arr[] = {
-			{ mod->syms, mod->syms + mod->num_syms, mod->crcs,
-			  NOT_GPL_ONLY, false },
-			{ mod->gpl_syms, mod->gpl_syms + mod->num_gpl_syms,
-			  mod->gpl_crcs,
-			  GPL_ONLY, false },
-#ifdef KSPLICE_KSYMTAB_FUTURE_SUPPORT
-			{ mod->gpl_future_syms,
-			  mod->gpl_future_syms + mod->num_gpl_future_syms,
-			  mod->gpl_future_crcs,
-			  WILL_BE_GPL_ONLY, false },
-#endif /* KSPLICE_KSYMTAB_FUTURE_SUPPORT */
-#ifdef KSPLICE_KSYMTAB_UNUSED_SUPPORT
-			{ mod->unused_syms,
-			  mod->unused_syms + mod->num_unused_syms,
-			  mod->unused_crcs,
-			  NOT_GPL_ONLY, true },
-			{ mod->unused_gpl_syms,
-			  mod->unused_gpl_syms + mod->num_unused_gpl_syms,
-			  mod->unused_gpl_crcs,
-			  GPL_ONLY, true },
-#endif /* KSPLICE_KSYMTAB_UNUSED_SUPPORT */
-		};
-
-		if (each_symbol_in_section(module_arr, ARRAY_SIZE(module_arr),
-					   mod, fn, data))
-			return true;
-	}
-	return false;
-}
-
-struct find_symbol_arg {
-	/* Input */
-	const char *name;
-	bool gplok;
-	bool warn;
-
-	/* Output */
-	struct module *owner;
-	const unsigned long *crc;
-	const struct kernel_symbol *sym;
-};
-
-static bool find_symbol_in_section(const struct symsearch *syms,
-				   struct module *owner,
-				   unsigned int symnum, void *data)
-{
-	struct find_symbol_arg *fsa = data;
-
-	if (strcmp(syms->start[symnum].name, fsa->name) != 0)
-		return false;
-
-	if (!fsa->gplok) {
-		if (syms->licence == GPL_ONLY)
-			return false;
-		if (syms->licence == WILL_BE_GPL_ONLY && fsa->warn) {
-			printk(KERN_WARNING "Symbol %s is being used "
-			       "by a non-GPL module, which will not "
-			       "be allowed in the future\n", fsa->name);
-			printk(KERN_WARNING "Please see the file "
-			       "Documentation/feature-removal-schedule.txt "
-			       "in the kernel source tree for more details.\n");
-		}
-	}
-
-#ifdef CONFIG_UNUSED_SYMBOLS
-	if (syms->unused && fsa->warn) {
-		printk(KERN_WARNING "Symbol %s is marked as UNUSED, "
-		       "however this module is using it.\n", fsa->name);
-		printk(KERN_WARNING
-		       "This symbol will go away in the future.\n");
-		printk(KERN_WARNING
-		       "Please evalute if this is the right api to use and if "
-		       "it really is, submit a report the linux kernel "
-		       "mailinglist together with submitting your code for "
-		       "inclusion.\n");
-	}
-#endif
-
-	fsa->owner = owner;
-	fsa->crc = symversion(syms->crcs, symnum);
-	fsa->sym = &syms->start[symnum];
-	return true;
-}
-
-/* Find a symbol and return it, along with, (optional) crc and
- * (optional) module which owns it */
-static const struct kernel_symbol *find_symbol(const char *name,
-					       struct module **owner,
-					       const unsigned long **crc,
-					       bool gplok, bool warn)
-{
-	struct find_symbol_arg fsa;
-
-	fsa.name = name;
-	fsa.gplok = gplok;
-	fsa.warn = warn;
-
-	if (each_symbol(find_symbol_in_section, &fsa)) {
-		if (owner)
-			*owner = fsa.owner;
-		if (crc)
-			*crc = fsa.crc;
-		return fsa.sym;
-	}
-
-	return NULL;
-}
-
-static inline int within_module_core(unsigned long addr, struct module *mod)
-{
-        return (unsigned long)mod->module_core <= addr &&
-               addr < (unsigned long)mod->module_core + mod->core_size;
-}
-
-static inline int within_module_init(unsigned long addr, struct module *mod)
-{
-        return (unsigned long)mod->module_init <= addr &&
-               addr < (unsigned long)mod->module_init + mod->init_size;
-}
-
-static struct module *__module_address(unsigned long addr)
-{
-	struct module *mod;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
-	list_for_each_entry_rcu(mod, &modules, list)
-#else
-/* d72b37513cdfbd3f53f3d485a8c403cc96d2c95f was after 2.6.27 */
-	list_for_each_entry(mod, &modules, list)
-#endif
-		if (within_module_core(addr, mod) ||
-		    within_module_init(addr, mod))
-			return mod;
-	return NULL;
-}
-#endif /* LINUX_VERSION_CODE */
 
 struct update_attribute {
 	struct attribute attr;

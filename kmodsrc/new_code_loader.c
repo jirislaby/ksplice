@@ -40,9 +40,6 @@ extern const typeof(void (*)(void)) ksplice_call_reverse[],
     ksplice_call_post_reverse_end[], ksplice_call_fail_reverse[],
     ksplice_call_fail_reverse_end[];
 
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-extern struct paravirt_patch_site parainstructions[], parainstructions_end[];
-#endif
 #ifdef KSPLICE_STANDALONE
 extern struct ksplice_system_map ksplice_system_map[], ksplice_system_map_end[];
 #endif /* KSPLICE_STANDALONE */
@@ -63,10 +60,6 @@ struct ksplice_mod_change change = {
 		.sections_end = ksplice_sections_end,
 		.symbols = ksplice_symbols,
 		.symbols_end = ksplice_symbols_end,
-#ifdef KSPLICE_NEED_PARAINSTRUCTIONS
-		.parainstructions = parainstructions,
-		.parainstructions_end = parainstructions_end,
-#endif
 #ifdef KSPLICE_STANDALONE
 		.system_map = ksplice_system_map,
 		.system_map_end = ksplice_system_map_end,

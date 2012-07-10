@@ -50,26 +50,6 @@ EXTRACT_SYMBOL(ftrace_trace_function);
 
 #define N_BITS(n) ((n) < sizeof(long) * 8 ? ~(~0L << (n)) : ~0L)
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-/* 91768d6c2bad0d2766a166f13f2f57e197de3458 was after 2.6.19 */
-#if defined(_I386_BUG_H) && (LINUX_VERSION_CODE < KERNEL_VERSION(2,6,11) || \
-			     defined(CONFIG_DEBUG_BUGVERBOSE)) && \
-    !defined(do_each_thread_ve) /* OpenVZ */
-/* 38326f786cf4529a86b1ccde3aa17f4fa7e8472a was after 2.6.10 */
-		/* ud2 means BUG().  On old i386 kernels, it is followed
-		   by 2 bytes and then a 4-byte relocation; and is not
-		   disassembler-friendly. */
-		struct bug_frame {
-			unsigned char ud2[2];
-			unsigned short line;
-			char *filename;
-		} __attribute__((packed));
-#define KSPLICE_USE_BUG_FRAME
-#elif defined(__ASM_X8664_BUG_H)
-#define KSPLICE_USE_BUG_FRAME
-#endif
-#endif /* LINUX_VERSION_CODE */
-
 static abort_t compare_instructions(struct ksplice_mod_change *change,
 				    struct ksplice_section *sect,
 				    const struct ksplice_reloc **fingerp,
@@ -247,50 +227,6 @@ static abort_t arch_run_pre_cmp(struct ksplice_mod_change *change,
 		run_nop = true;
 		pre_nop = true;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20) && \
-    defined(KSPLICE_USE_BUG_FRAME)
-/* 91768d6c2bad0d2766a166f13f2f57e197de3458 was after 2.6.19 */
-		if (run_ud.mnemonic == pre_ud.mnemonic &&
-		    run_ud.mnemonic == UD_Iud2) {
-			const struct bug_frame
-			    *pre_bug = (const struct bug_frame *)pre,
-			    *run_bug = (const struct bug_frame *)run;
-			const struct ksplice_reloc *r;
-			ret = lookup_reloc(change, &finger,
-					   (unsigned long)&pre_bug->filename,
-					   &r);
-			if (ret == NO_MATCH) {
-				if (mode == RUN_PRE_INITIAL)
-					ksdebug(change, "Unrecognized ud2\n");
-				goto out;
-			}
-			if (ret != OK)
-				goto out;
-			ret = handle_reloc(change, sect, r,
-					   (unsigned long)&run_bug->filename,
-					   mode);
-			if (ret != OK)
-				goto out;
-			/* If there's a relocation, then it's a BUG? */
-			if (mode == RUN_PRE_DEBUG) {
-				ksdebug(change, "[BUG?: ");
-				print_bytes(change,
-					    run + sizeof(run_bug->ud2),
-					    sizeof(*run_bug),
-					    pre + sizeof(pre_bug->ud2),
-					    sizeof(*pre_bug));
-				ksdebug(change, "] ");
-			}
-			pre += sizeof(*pre_bug);
-			run += sizeof(*run_bug);
-			ud_input_skip(&run_ud,
-				      sizeof(*run_bug) - sizeof(run_bug->ud2));
-			ud_input_skip(&pre_ud,
-				      sizeof(*pre_bug) - sizeof(pre_bug->ud2));
-			continue;
-		}
-#endif /* LINUX_VERSION_CODE && KSPLICE_USE_BUG_FRAME */
-
 #ifdef CONFIG_XEN
 		if (run_ud.mnemonic == pre_ud.mnemonic &&
 		    run_ud.mnemonic == UD_Iud2) {
@@ -386,9 +322,6 @@ static abort_t compare_instructions(struct ksplice_mod_change *change,
 		(*fingerp)++;
 	}
 
-#if defined(CONFIG_X86_64) && LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-/* 91768d6c2bad0d2766a166f13f2f57e197de3458 was after 2.6.19 */
-#else /* !CONFIG_X86_64 || LINUX_VERSION_CODE >= */
 #ifndef do_each_thread_ve		/* OpenVZ */
 	if (run_ud->mnemonic == UD_Iud2 && !found_bug_entry) {
 		if (strcmp(change->target_name, "kvm_intel") == 0 ||
@@ -402,7 +335,6 @@ static abort_t compare_instructions(struct ksplice_mod_change *change,
 		}
 	}
 #endif /* do_each_thread_ve */
-#endif /* CONFIG_X86_64 && LINUX_VERSION_CODE */
 
 	for (i = 0; i < ARRAY_SIZE(run_ud->operand); i++) {
 		ret = compare_operands(change, sect, fingerp, run_start, run,
@@ -790,46 +722,3 @@ static bool valid_stack_ptr(const struct thread_info *tinfo, const void *p)
 	return p > (const void *)tinfo
 	    && p <= (const void *)tinfo + THREAD_SIZE - sizeof(long);
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,20)
-static bool virtual_address_mapped(unsigned long addr)
-{
-	pgd_t *pgd;
-#ifdef pud_page
-	pud_t *pud;
-#endif /* pud_page */
-	pmd_t *pmd;
-	pte_t *pte;
-
-#ifdef KSPLICE_STANDALONE
-	if (!bootstrapped)
-		return true;
-#endif /* KSPLICE_STANDALONE */
-
-	pgd = pgd_offset_k(addr);
-	if (!pgd_present(*pgd))
-		return false;
-
-#ifdef pud_page
-	pud = pud_offset(pgd, addr);
-	if (!pud_present(*pud))
-		return false;
-
-	pmd = pmd_offset(pud, addr);
-#else /* pud_page */
-	pmd = pmd_offset(pgd, addr);
-#endif /* pud_page */
-
-	if (!pmd_present(*pmd))
-		return false;
-
-	if (pmd_large(*pmd))
-		return true;
-
-	pte = pte_offset_kernel(pmd, addr);
-	if (!pte_present(*pte))
-		return false;
-
-	return true;
-}
-#endif /* LINUX_VERSION_CODE */
