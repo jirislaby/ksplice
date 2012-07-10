@@ -436,9 +436,21 @@ that have previously been applied by Ksplice.
 
 =over 8
 
+=item B<--id=>I<ID>
+
+Specifies the unique value that will be used as the identifier of the
+Ksplice update.  This identifier will, for example, appear in the name
+of the update tarball.  By default, a random 8-character ID will be
+generated.
+
 =item B<--patch=>I<PATCH_FILE>
 
 Builds a Ksplice update out of the given L<patch(1)> file I<PATCH_FILE>.
+
+=item B<--description=>I<DESCRIPTION>
+
+This description is shown during ksplice-view to describe what an actual patch
+fixes.
 
 =item B<--diffext=>I<EXTENSION>
 
@@ -486,11 +498,35 @@ applied using L<ksplice-apply(1)> B<--partial>.
 Causes B<ksplice-create> to print debugging messages about its progress.  Using
 multiple -v options increases the verbosity.  The maximum is 2.
 
+=item B<--only-targets=>I<TARGETS>
+
+Create a patch only for modules/vmlinux listed. This option can be specified
+multiple times to pass a list of targets. This is implemented using make(1)
+filter, so % is a wildcard.
+
+=item B<--standalone> B<--nostandalone>
+
+Create a standalone kernel module containing the patch but also the code that
+performs patching. This is the default iff the kernel does not have the code
+compiled in. You can override it by these options.
+
+=item B<--skip-prebuild>
+
+Do not build the kernel before creating a patch. Do not use unless you are very
+sure what you are doing.
+
 =item B<-j> I<JOBS>, B<--jobs=>I<JOBS>
 
 Specifies the number of jobs to run simultaneously while performing kernel
 builds.  B<ksplice-create> also honors the environment variable
 CONCURRENCY_LEVEL.
+
+=item B<--config=>I<CONFIGDIR>
+
+Specifies the configuration directory. It shall contain System.map and build
+directory. Additionally flags file may be there which is read and its contents
+passed to make when building a kernel. This is useful for example to pass O=
+kernel make flags. The default is sourcetree/ksplice.
 
 =item B<--patch-opt=>I<OPTIONS>
 
@@ -499,13 +535,6 @@ B<-p1> is passed to B<patch>.  If this option is specified, then only the
 specified options will be passed to B<patch>.  This option can be repeated in
 order to pass multiple options to B<patch>.  This option is ignored when the
 to-be-applied source code patch is specified using B<--diffext>.
-
-=item B<--id=>I<ID>
-
-Specifies the unique value that will be used as the identifier of the
-Ksplice update.  This identifier will, for example, appear in the name
-of the update tarball.  By default, a random 8-character ID will be
-generated.
 
 =back
 
