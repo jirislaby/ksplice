@@ -2864,6 +2864,10 @@ enum supersect_type supersect_type(struct supersect *ss)
 		return SS_TYPE_STRING;
 	if (strstarts(ss->name, "__ksymtab"))
 		return SS_TYPE_EXPORT;
+	if (strstarts(ss->name, "___ksymtab"))
+		return SS_TYPE_IGNORED;
+	if (strstarts(ss->name, "___kcrctab"))
+		return SS_TYPE_IGNORED;
 
 	if (strstarts(ss->name, "__bug_table"))
 		return SS_TYPE_BUGTABLE;
