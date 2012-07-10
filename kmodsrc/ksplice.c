@@ -1248,6 +1248,18 @@ static bool add_export_values(const struct symsearch *syms,
 	return false;
 }
 
+static bool add_export_values_section(const struct symsearch *syms,
+		struct module *owner, void *data)
+{
+	unsigned int i;
+
+	for (i = 0; i < syms->stop - syms->start; i++)
+		if (add_export_values(syms, owner, i, data))
+			return true;
+
+	return false;
+}
+
 static void cleanup_symbol_arrays(struct ksplice_mod_change *change)
 {
 	struct ksplice_symbol *sym;
@@ -1381,7 +1393,7 @@ static abort_t init_symbol_array(struct ksplice_mod_change *change,
 	lookup.size = size;
 	lookup.ret = OK;
 
-	each_symbol(add_export_values, &lookup);
+	each_symbol_section(add_export_values_section, &lookup);
 	ret = lookup.ret;
 #ifdef CONFIG_KALLSYMS
 	if (ret == OK)
