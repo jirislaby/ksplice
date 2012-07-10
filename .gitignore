@@ -1,5 +1,6 @@
 *.8
 *~
+.*.swp
 
 cscope.out
 /autom4te.cache/
