@@ -1,4 +1,4 @@
-AC_INIT([Ksplice], [0.9.9.1], [devel@ksplice.com])
+AC_INIT([Ksplice], [1.0], [jslaby@suse.cz])
 AC_SUBST([KSPLICE_API_VERSION], [2])
 
 # needed for bfd and iberty
