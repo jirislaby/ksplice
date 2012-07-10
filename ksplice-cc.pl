@@ -35,7 +35,7 @@ foreach (@ARGV) {
 
 my $pid = open3('<&STDIN', '>&STDOUT', \*ERROR, @cmd);
 while (<ERROR>) {
-	next if /^<command[- ]line>(?::\d+:\d+)?: warning: "(?:__DATE__|__TIME__)" redefined$/;
+	next if /^<command[- ]line>(?::\d+:\d+)?: warning: "(?:__DATE__|__TIME__)" redefined(?: \[-Wbuiltin-macro-redefined\])?$/;
 	print STDERR;
 }
 close ERROR;
