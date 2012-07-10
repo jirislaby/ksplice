@@ -4277,9 +4277,13 @@ static int maybe_cleanup_ksplice_update_wrapper(void *updateptr)
 	return 0;
 }
 
+EXTRACT_SYMBOL(set_all_modules_text_ro);
+EXTRACT_SYMBOL(set_all_modules_text_rw);
+
 static ssize_t stage_store(struct update *update, const char *buf, size_t len)
 {
 	enum stage old_stage;
+	set_all_modules_text_rw();
 	mutex_lock(&module_mutex);
 	old_stage = update->stage;
 	if ((strncmp(buf, "applied", len) == 0 ||
@@ -4297,6 +4301,7 @@ static ssize_t stage_store(struct update *update, const char *buf, size_t len)
 			    "ksplice_cleanup_%s", update->kid);
 
 	mutex_unlock(&module_mutex);
+	set_all_modules_text_ro();
 	return len;
 }
 
@@ -4378,7 +4383,11 @@ static struct ksplice_mod_change bootstrap_mod_change = {
 static int init_ksplice(void)
 {
 #ifdef KSPLICE_STANDALONE
+	typeof(&set_all_modules_text_rw) __my_set_all_modules_text_rw;
 	struct ksplice_mod_change *change = &bootstrap_mod_change;
+	LIST_HEAD(vals);
+	abort_t ret;
+
 	change->update = init_ksplice_update(change->kid);
 	sort(change->new_code.system_map,
 	     change->new_code.system_map_end - change->new_code.system_map,
@@ -4386,9 +4395,25 @@ static int init_ksplice(void)
 	if (change->update == NULL)
 		return -ENOMEM;
 	add_to_update(change, change->update);
+
+	/* we can call it directly even after apply_relocs below */
+	ret = add_system_map_candidates(change, change->new_code.system_map,
+			change->new_code.system_map_end,
+			"set_all_modules_text_rw", &vals);
+	if (ret != OK) {
+		/* FIXME leak */
+		return -EIO;
+	}
+	__my_set_all_modules_text_rw =
+		list_entry(vals.next, struct candidate_val, list)->val;
+	release_vals(&vals);
+
+	__my_set_all_modules_text_rw();
 	change->update->debug = debug;
 	change->update->abort_cause =
 	    apply_relocs(change, ksplice_init_relocs, ksplice_init_relocs_end);
+	set_all_modules_text_ro();
+
 	if (change->update->abort_cause == OK)
 		bootstrapped = true;
 	cleanup_ksplice_update(bootstrap_mod_change.update);
