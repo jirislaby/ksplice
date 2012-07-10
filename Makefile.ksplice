@@ -88,7 +88,7 @@ ksplice-deps += ksplice_modpost
 endif
 ksplice-deps += $(vmlinux-dirs)
 
-ksplice-vmlinux-objs = $(if $(vmlinux-all),$(vmlinux-all),$(vmlinux-objs))
+ksplice-vmlinux-objs = $(if $(vmlinux-deps),$(vmlinux-deps),$(if $(vmlinux-all),$(vmlinux-all),$(vmlinux-objs)))
 $(obj)/vmlinux.o.KSPLICE: ksplice-link-deps = $(ksplice-vmlinux-objs)
 $(obj)/vmlinux.o.KSPLICE: $(call ksplice-objs,$(ksplice-vmlinux-objs)) FORCE
 	$(call if_changed,ksplice-combine)
