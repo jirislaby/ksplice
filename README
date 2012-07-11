@@ -1,17 +1,40 @@
 Ksplice
-Copyright (C) 2007-2009  Ksplice, Inc.
-Authors: Jeff Arnold, Anders Kaseorg, Tim Abbott
+=======
 
-This program is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License, version 2.
+This set of tools serves the purpose of creating from a standard patch a
+binary patch that can be applied to a running Linux kernel without a need of
+rebooting.
 
-For more information about Ksplice, please see <http://www.ksplice.com/>.
+It stops the kernel, performs neccessary checks and applies the binary patch.
+The kernel is then resumed with a new code running.
 
-Installation instructions:
- $ ./configure
- $ make
- $ make install
+WHAT DO I NEED?
+---------------
+* System.map and .config from your running kernel (a build dir at best)
+* sources of your running kernel
+* toolkit used to build your running kernel (or as much akin as possible)
+* and finally: the patch to be applied
 
-Notable Build Dependencies:
- - GNU binary file descriptor (BFD) library (version 2.15 or later)
-   (available in Debian's binutils-dev package and in other distributions)
+STEP BY STEP HOWTO
+------------------
+1. create a configuration dir to prepare the build
+   a) put there System.map
+   b) put there a build dir named "build" (or a link if you have one already)
+   c) create flags file there with flags passed to make during the normal
+      kernel build, like O=path, typically the "build" dir [optional]
+
+2. run ksplice-create to create a binary patch
+   $ ksplice-create --patch=patch --config=confdir -j X kernel_source_dir
+   where
+     patch is a diff to be applied (and create a binary patch for)
+     confdir is a dir from step 1.
+     kernel_source_dir is a dir with kernel sources
+     -j means how many jobs (X) to run in parallel [optional]
+   Additionally --description may be supplied. It is shown by ksplice-view
+   later.
+
+3. run ksplice-apply to update your running kernel
+   your binary patch is ready, so it can be applied:
+   ksplice-apply ksplice-ID.tar.gz
+
+4. check the applied patches by ksplice-view
