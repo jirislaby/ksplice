@@ -1,6 +1,8 @@
 *.8
 *~
-.*.swp
+.*.sw?
+*.orig
+*.rej
 
 cscope.out
 /autom4te.cache/
