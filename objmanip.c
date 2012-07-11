@@ -2869,6 +2869,13 @@ enum supersect_type supersect_type(struct supersect *ss)
 	if (strstarts(ss->name, "___kcrctab"))
 		return SS_TYPE_IGNORED;
 
+	/*
+	 * FIXME this is wrong as it breaks dynamic debug lines
+	 * We should do similar stuff to __bug_table below...
+	 */
+	if (strcmp(ss->name, "__verbose") == 0)
+		return SS_TYPE_IGNORED;
+
 	if (strstarts(ss->name, "__bug_table"))
 		return SS_TYPE_BUGTABLE;
 
