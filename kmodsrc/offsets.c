@@ -55,11 +55,17 @@ const struct table_section table_sections[]
 				replacementlen),
 		.entry_align = __alignof__(struct alt_instr),
 		.has_addr = 1,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
 		.relative_addr = 1,
 		.addr_offset = offsetof(struct alt_instr, instr_offset),
 		.relative_other = 1,
 		.other_sect = ".altinstr_replacement",
 		.other_offset = offsetof(struct alt_instr, repl_offset),
+#else
+		.addr_offset = offsetof(struct alt_instr, instr),
+		.other_sect = ".altinstr_replacement",
+		.other_offset = offsetof(struct alt_instr, replacement),
+#endif
 	},
 #endif /* CONFIG_X86 */
 #ifdef CONFIG_GENERIC_BUG
