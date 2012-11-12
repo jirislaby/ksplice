@@ -1,3 +1,8 @@
+/* workaround for bfd crap check. WTF were they thinking? */
+#ifndef PACKAGE
+#define PACKAGE "ksplice"
+#endif
+
 #include <bfd.h>
 #include <limits.h>
 #include <stdarg.h>
