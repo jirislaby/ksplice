@@ -3480,15 +3480,39 @@ static struct ksplice_mod_change bootstrap_mod_change = {
 	.new_code.system_map = ksplice_system_map,
 	.new_code.system_map_end = ksplice_system_map_end,
 };
+
+static int __my_set_all_modules_text_rw(struct ksplice_mod_change *change)
+{
+#ifdef CONFIG_DEBUG_SET_MODULE_RONX
+	typeof(&set_all_modules_text_rw) fun;
+	LIST_HEAD(vals);
+	abort_t ret;
+
+	ret = add_system_map_candidates(change, change->new_code.system_map,
+			change->new_code.system_map_end,
+			"set_all_modules_text_rw", &vals);
+	if (ret != OK)
+		return -EIO;
+	fun = list_entry(vals.next, struct candidate_val, list)->val;
+	release_vals(&vals);
+
+	fun();
+#else
+	/*
+	 * It's an inline, no problem to call it directly.
+	 * It should be a nop though.
+	 */
+	set_all_modules_text_rw();
+#endif
+	return 0;
+}
 #endif /* KSPLICE_STANDALONE */
 
 static int init_ksplice(void)
 {
 #ifdef KSPLICE_STANDALONE
-	typeof(&set_all_modules_text_rw) __my_set_all_modules_text_rw;
 	struct ksplice_mod_change *change = &bootstrap_mod_change;
-	LIST_HEAD(vals);
-	abort_t ret;
+	int ret;
 
 	change->update = init_ksplice_update(change->kid);
 	sort(change->new_code.system_map,
@@ -3498,19 +3522,12 @@ static int init_ksplice(void)
 		return -ENOMEM;
 	add_to_update(change, change->update);
 
-	/* we can call it directly even after apply_relocs below */
-	ret = add_system_map_candidates(change, change->new_code.system_map,
-			change->new_code.system_map_end,
-			"set_all_modules_text_rw", &vals);
-	if (ret != OK) {
+	/* we can call it directly even after apply_relocs */
+	ret = __my_set_all_modules_text_rw(change);
+	if (ret) {
 		/* FIXME leak */
-		return -EIO;
+		return ret;
 	}
-	__my_set_all_modules_text_rw =
-		list_entry(vals.next, struct candidate_val, list)->val;
-	release_vals(&vals);
-
-	__my_set_all_modules_text_rw();
 	change->update->debug = debug;
 	change->update->abort_cause =
 	    apply_relocs(change, ksplice_init_relocs, ksplice_init_relocs_end);
