@@ -1200,7 +1200,7 @@ static void *map_writable(void *addr, size_t len)
 			pages[i] = virt_to_page(page_addr);
 			WARN_ON(!PageReserved(pages[i]));
 		} else {
-			pages[i] = vmalloc_to_page(addr);
+			pages[i] = vmalloc_to_page(page_addr);
 		}
 		if (pages[i] == NULL) {
 			kfree(pages);
