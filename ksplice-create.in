@@ -507,7 +507,7 @@ filter, so % is a wildcard.
 =item B<--standalone> B<--nostandalone>
 
 Create a standalone kernel module containing the patch but also the code that
-performs patching. This is the default iff the kernel does not have the code
+performs patching. This is the default if the kernel does not have the code
 compiled in. You can override it by these options.
 
 =item B<--skip-prebuild>
